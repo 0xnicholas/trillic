@@ -10,10 +10,12 @@
 
 ## 对标(The Token Company / bear)
 
+- **Trillic 侧深度研究**:`research/bear.md`——按本项目消费面组织的深挖层：评测方法学(喂阶段 1)、query-aware 能力形态(喂 v2)、产品化特性机制(防重议)、版本演进考古；含重抓触发与第一方实测重议条件
 - 完整调研与口径分析:`../../tokencamp-pro/docs/research/thetokencompany-compression.md`
   ——产品事实、bear 机制(同族抽取式)、双方数字口径差异、路线建议
-- 要点:同技术族;对方全部优势数字为厂商自述小样本;其分场景分档指导与
-  `<ttc_safe>` 保护标签是产品化参考
+- 要点：同技术族；对方全部优势数字为厂商自述小样本;其分场景分档指导与
+  `<ttc_safe>` 保护标签是产品化参考;公开评测 harness(TheTokenCompany/
+  Benchmarks)可作方法学参照
 
 ## 旧项目(0xnicholas/tokencamp,设计源头)
 
