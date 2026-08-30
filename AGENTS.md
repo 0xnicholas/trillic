@@ -22,3 +22,20 @@ Trillic — 自训 prompt 压缩模型项目(为 tokencamp-pro 的 refine 供货
 - 模型的运行时宿主是 `../tokencamp-pro/sidecars/refine/`(本仓不存放其代码);
 - 产出物 = 与 LLMLingua-2 同接口的 token 分类 checkpoint;验收标准见
   `docs/evaluation.md`。
+
+## Agent skills
+
+### Issue tracker
+
+Issues 活在 GitHub Issues(0xnicholas/trillic),技能经 `gh` CLI 读写。见
+  `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+默认五个 triage 标签(needs-triage / needs-info / ready-for-agent /
+  ready-for-human / wontfix)。见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+Single-context:根目录 `CONTEXT.md` + `docs/decisions.md` 作决策记录。见
+  `docs/agents/domain.md`。
