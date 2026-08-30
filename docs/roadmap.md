@@ -82,6 +82,11 @@ bear(The Token Company)框定能力面——抽取式本体 + query-aware 扩展
 - **第一项工作是接入面 spike**,不是数据:task 信号从哪来(refine
   管道有无天然任务上下文)、`compress()` 接口怎么扩、tokencamp-pro 侧
   是否接受配合性改动(跨仓谈判,host 有自己的 ADR 纪律)。
+- **设计输入(bear 参照,2026-08-30 增补)**:query-aware 的行业参照形态 =
+  focus statement(自然语言任务描述)+ retention budget(保留比例)双参数,
+  与 aggressiveness(删除阈值)是两套参数化;接入面 spike 时评估 budget
+  作为第二参数语义候选,并受 decisions.md §5 KV cache 硬规则约束
+  (已缓存前缀不动)。来源:`docs/research/bear.md` 消费点 B。
 - **收缩路径**:spike 被拒 → v2 降级为 research artifact——数据管线、
   checkpoint、评测数字照常产出归档,不上生产。v2 的成功定义从"上线"
   变为"证明 query-aware 在自家数据上有效"。
