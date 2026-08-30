@@ -41,6 +41,18 @@
 
 完整阶段结构、门禁与理由见 `roadmap.md`。
 
+### 5. KV cache 相容性硬规则(2026-08-30,bear 研究输入)
+
+- 当压缩面扩展为 role 感知(v2 接入面设计,或 host 侧 per-role 分档)时,
+  **assistant 消息与已缓存前缀不可压缩**是硬约束。依据:TTC 将其写进核心
+  承诺("keeps your prompt caches valid",docs 三处强调 assistant 永不压缩),
+  推断是用生产事故换来的教训;网关的多轮会话同样依赖前缀缓存,压缩破坏
+  缓存 = 延迟与成本双重回退,直接吃掉压缩收益。
+- 现状注记:现网 compressor 无 role 概念、整段压缩(含 assistant 轮)——
+  这是 host 侧(tokencamp-pro)的已知缺口,记录在案防止 v2 设计时重议;
+  本仓 v2 接入面 spike 必须把"不破坏已缓存前缀"列为设计前提。
+- 来源:`docs/research/bear.md` §C.2、§D.3。
+
 ## 排除项汇总
 
 | 排除 | 理由 |
