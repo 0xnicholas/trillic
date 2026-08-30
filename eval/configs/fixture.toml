@@ -1,0 +1,30 @@
+# Walking-skeleton run configuration for the fixture golden set.
+#
+# Modes:
+#   sidecar.mode = "stub"  -> deterministic in-process stub (zero network)
+#   sidecar.mode = "http"  -> real refine sidecar (POST {url}/refine)
+#   gateway.mode           -> same two modes; gateway is not called by
+#                             `eval run` yet (task-level quality arrives with
+#                             issue #7) but the injection seam is in place.
+#
+# Never put credentials in this file: the gateway service key is read from
+# the REFINE_SERVICE_KEY environment variable only.
+
+name = "fixture"
+
+[harness]
+seed = 0
+tiktoken_encoding = "cl100k_base"  # billing-caliber; matches the 2026-07-28 reference numbers
+
+[run]
+aggressiveness = 0.2
+
+[sidecar]
+mode = "stub"
+url = "http://127.0.0.1:9797"
+rewrite = false
+compress = true
+
+[gateway]
+mode = "stub"
+url = "http://127.0.0.1:3005"

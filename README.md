@@ -29,7 +29,32 @@ checkpoint 上领域微调出自有模型,在压缩质量、压缩率、query-aw
   (The Token Company / bear 的产品事实、技术对比、口径分析)
 - refine 实现:`../tokencamp-pro/sidecars/refine/`(本项目模型的运行时宿主)
 
+## 开发
+
+技术栈:Python 3.12+,uv 管理依赖,pytest 测试。依赖刻意保持最小
+(httpx、tiktoken、pytest),不含训练栈。
+
+```bash
+uv sync                    # 安装依赖
+uv run pytest              # 全量测试(零网络:sidecar/网关用确定性假桩)
+uv run trillic eval run \
+  --config eval/configs/fixture.toml \
+  --golden eval/golden/fixture.jsonl \
+  --out runs               # 跑 fixture 迷你集(stub 模式,零网络零花费)
+```
+
+说明:
+
+- **评测骨架**(`trillic eval run`,issue #2):golden jsonl + TOML 配置进 →
+  不可变 run 目录(`metrics.json` + `report.md`)出;压缩率按 tiktoken
+  口径(`cl100k_base`,与 docs/evaluation.md 对照数字同口径)。
+- **假桩注入**:sidecar(POST /refine)与网关客户端均为可注入协议,
+  配置 `mode = "stub" | "http"` 切换;全部测试零网络。
+- **离线 tiktoken**:测试通过仓内缓存(`eval/assets/tiktoken_cache/`)
+  跑通,不依赖外网;真实跑可设 `TIKTOKEN_CACHE_DIR` 指向同一目录。
+- **网关密钥**只经 `REFINE_SERVICE_KEY` 环境变量注入,不进配置文件、不落仓。
+
 ## 状态
 
-初始化完成,仅文档。Roadmap 已定案(见 `docs/roadmap.md`);第一阶段
-(评测基线)未开工。
+阶段 1(评测基线)开工:评测 harness walking skeleton 已落地(issue
+#2);golden 规模化与指标全集见后续子票。

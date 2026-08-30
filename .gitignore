@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Evaluation run outputs (immutable artifacts, never committed)
+runs/
+
+# Environment — credentials are env-only, never files
+.env
