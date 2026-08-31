@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "method": "handwritten scenario-family templates (src/trillic/sysprompt.py) + seeded slot synthesis; per-family DISJOINT eval/train integer seed ranges in sysprompt_families.toml are the split authority — golden draws from eval seeds only, phase-2 training synthesis uses train seeds (generator code shared, seeds never cross)",
+  "method": "handwritten scenario-family templates (src/trillic/sysprompt.py) + seeded slot synthesis; per-family DISJOINT eval/train integer seed ranges in sysprompt_families.toml are the split authority — golden draws from eval seeds only; the phase-2 training side will reuse the same templates and machinery with train seeds (shared code, never shared seeds)",
   "entry_id_rule": "sys-<family>-s<seed>",
   "rng": "random.Random(int.from_bytes(sha256('<family>:<seed>')[:8]))",
   "content_addressing": "sha1(prompt)",

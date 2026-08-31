@@ -7,8 +7,9 @@ pipeline:
 
   1. eval/manifests/sysprompt_families.toml — committed, human-curated
      registry: per family, DISJOINT eval/train integer seed ranges. It is
-     the split authority (硬约束 4: the generator code is shared with the
-     phase-2 training side, but scenario families and seeds never cross).
+     the split authority (data-strategy hard constraint 4: scenario
+     templates and the synthesis machinery below are shared with the
+     phase-2 training side, but seed pools never cross).
   2. FAMILY_TEMPLATES below — handwritten scenario templates: a
      production-style system prompt, a user message that ACTIVATES the
      constraints (pushes against them), and behavioral key points
@@ -533,6 +534,12 @@ def build_sysprompt_entries(families: list[dict], seed_plan: dict[str, list[int]
     missing = sorted(set(seed_plan) - set(by_name))
     if missing:
         raise SysPromptError(f"seed plan references families not in the registry: {missing}")
+    for name, seeds in seed_plan.items():
+        if len(set(seeds)) != len(seeds):
+            raise SysPromptError(
+                f"seed plan for {name!r} repeats a seed — each (family, seed) "
+                "pair yields exactly one entry"
+            )
     entries: list[dict] = []
     for family in families:
         for seed in sorted(seed_plan.get(family["name"], [])):
@@ -541,15 +548,23 @@ def build_sysprompt_entries(families: list[dict], seed_plan: dict[str, list[int]
 
 
 def build_sysprompt_manifest(
-    families: list[dict], *, golden_path: Path | None = None
+    families: list[dict],
+    *,
+    golden_path: Path | None = None,
+    review: dict | None = None,
 ) -> dict:
     """Generate the sysprompt manifest (allocation record; pilot block when a
     frozen golden file is provided).
 
     With golden_path, every entry is cross-checked against regeneration:
-    registered family, eval-side seed, matching id and content_sha1. This is
-    the drift gate — the manifest never blesses a golden file that no longer
-    matches the registry + generator.
+    registered family, eval-side seed, matching id, no duplicates, and
+    matching content_sha1. This is the drift gate — the manifest never
+    blesses a golden file that no longer matches the registry + generator.
+
+    `review` overrides the pilot review block (the owner sign-off record);
+    it defaults to pending. The review block is owner-owned metadata layered
+    on top of the generator output, so regenerating never silently resets
+    an approval.
     """
     manifest = {
         "schema_version": 1,
@@ -557,8 +572,9 @@ def build_sysprompt_manifest(
             "handwritten scenario-family templates (src/trillic/sysprompt.py) + "
             "seeded slot synthesis; per-family DISJOINT eval/train integer seed "
             "ranges in sysprompt_families.toml are the split authority — golden "
-            "draws from eval seeds only, phase-2 training synthesis uses train "
-            "seeds (generator code shared, seeds never cross)"
+            "draws from eval seeds only; the phase-2 training side will reuse "
+            "the same templates and machinery with train seeds (shared code, "
+            "never shared seeds)"
         ),
         "entry_id_rule": "sys-<family>-s<seed>",
         "rng": "random.Random(int.from_bytes(sha256('<family>:<seed>')[:8]))",
@@ -578,11 +594,13 @@ def build_sysprompt_manifest(
         ],
     }
     if golden_path is not None:
-        manifest["pilot"] = _pilot_record(families, Path(golden_path))
+        manifest["pilot"] = _pilot_record(families, Path(golden_path), review)
     return manifest
 
 
-def _pilot_record(families: list[dict], golden_path: Path) -> dict:
+def _pilot_record(
+    families: list[dict], golden_path: Path, review: dict | None
+) -> dict:
     """Verify a frozen golden file against the registry and record it."""
     by_name = {f["name"]: f for f in families}
     rows: list[dict] = []
@@ -599,6 +617,7 @@ def _pilot_record(families: list[dict], golden_path: Path) -> dict:
             ) from e
 
     seed_plan: dict[str, list[int]] = {}
+    seen_ids: set[str] = set()
     for row in rows:
         entry_id = row.get("id", "?")
         source = row.get("source", {})
@@ -624,6 +643,12 @@ def _pilot_record(families: list[dict], golden_path: Path) -> dict:
                 f"{golden_path}: entry {entry_id!r}: id must be "
                 f"{regenerated['id']!r}"
             )
+        if entry_id in seen_ids:
+            raise SysPromptError(
+                f"{golden_path}: entry {entry_id!r}: duplicate row — the pilot "
+                "must list each (family, seed) exactly once"
+            )
+        seen_ids.add(entry_id)
         seed_plan.setdefault(name, []).append(seed)
 
     return {
@@ -631,17 +656,31 @@ def _pilot_record(families: list[dict], golden_path: Path) -> dict:
         "entries": len(rows),
         "ids": [r["id"] for r in rows],
         "seed_plan": {name: sorted(seeds) for name, seeds in seed_plan.items()},
-        "review": {
-            "status": "pending",
-            "reviewer": None,
-            "checked": [
-                "each system prompt reads as production-style and self-consistent",
-                "each user message actually activates the constraints",
-                "key_points are behavioral constraints (format/refusal/tone), not document facts",
-                "seeded values embedded in key_points match the prompt",
-            ],
-            "notes": "",
-        },
+        "review": review if review is not None else _pending_review(),
+    }
+
+
+def _pending_review() -> dict:
+    return make_review("pending")
+
+
+def make_review(status: str, *, reviewer: str | None = None, notes: str = "") -> dict:
+    """Build the pilot review (owner sign-off) block.
+
+    The checklist is the durable record of what an approval vouches for; it
+    lives here so the CLI flags and the default pending block can never
+    drift apart.
+    """
+    return {
+        "status": status,
+        "reviewer": reviewer,
+        "checked": [
+            "each system prompt reads as production-style and self-consistent",
+            "each user message actually activates the constraints",
+            "key_points are behavioral constraints (format/refusal/tone), not document facts",
+            "seeded values embedded in key_points match the prompt",
+        ],
+        "notes": notes,
     }
 
 

@@ -158,6 +158,30 @@ class TestGoldenManifestSysprompt:
         assert code == 1
         assert "content_sha1" in capsys.readouterr().err
 
+    def test_review_flags_record_owner_signoff(self, tmp_path, capsys):
+        golden = tmp_path / "pilot.jsonl"
+        _write_pilot(golden)
+        out = tmp_path / "sysprompt.json"
+        assert main(
+            ["golden", "manifest-sysprompt", "--families", str(FAMILIES_TOML),
+             "--golden", str(golden), "--review-status", "approved",
+             "--reviewer", "nicholas", "--review-notes", "spot-checked all 10",
+             "--out", str(out)]
+        ) == 0
+        review = json.loads(out.read_text())["pilot"]["review"]
+        assert review["status"] == "approved"
+        assert review["reviewer"] == "nicholas"
+        assert "spot-checked" in review["notes"]
+        capsys.readouterr()
+
+    def test_review_status_without_golden_errors(self, tmp_path, capsys):
+        code = main(
+            ["golden", "manifest-sysprompt", "--families", str(FAMILIES_TOML),
+             "--review-status", "approved", "--out", str(tmp_path / "m.json")]
+        )
+        assert code == 1
+        assert "--golden" in capsys.readouterr().err
+
 
 class TestGoldenBuildSysprompt:
     def test_builds_validated_golden_file_deterministically(self, tmp_path, capsys):

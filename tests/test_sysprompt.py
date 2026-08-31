@@ -201,8 +201,26 @@ class TestManifest:
         assert manifest["pilot"]["ids"] == [e["id"] for e in entries]
         assert manifest["pilot"]["seed_plan"] == {
             name: [seeds[0]] for name, seeds in plan.items()
-        } or set(manifest["pilot"]["seed_plan"]) == set(plan)
+        }
         assert manifest["pilot"]["review"]["status"] in ("pending", "approved")
+
+    def test_manifest_review_override_flows_through(self, tmp_path):
+        families = load_families(FAMILIES_TOML)
+        plan = {f["name"]: [f["eval_seed_range"][0]] for f in families}
+        golden = write_jsonl(
+            tmp_path / "pilot.jsonl", build_sysprompt_entries(families, plan)
+        )
+        approved = build_sysprompt_manifest(
+            families,
+            golden_path=golden,
+            review={"status": "approved", "reviewer": "nicholas", "notes": "lgtm"},
+        )
+        assert approved["pilot"]["review"]["status"] == "approved"
+        assert approved["pilot"]["review"]["reviewer"] == "nicholas"
+        # everything except the owner-owned review block still matches the
+        # default regeneration — an approval never masks a drift
+        default = build_sysprompt_manifest(families, golden_path=golden)
+        assert _without_review(approved) == _without_review(default)
 
     def test_manifest_refuses_drifted_golden(self, tmp_path):
         families = load_families(FAMILIES_TOML)
@@ -212,6 +230,22 @@ class TestManifest:
         golden = write_jsonl(tmp_path / "drifted.jsonl", entries)
         with pytest.raises(SysPromptError, match="content_sha1"):
             build_sysprompt_manifest(families, golden_path=golden)
+
+    def test_manifest_refuses_duplicate_pilot_rows(self, tmp_path):
+        families = load_families(FAMILIES_TOML)
+        plan = {f["name"]: [f["eval_seed_range"][0]] for f in families}
+        entries = build_sysprompt_entries(families, plan)
+        entries.append(dict(entries[0]))  # same (family, seed) twice
+        golden = write_jsonl(tmp_path / "dup.jsonl", entries)
+        with pytest.raises(SysPromptError, match="duplicate row"):
+            build_sysprompt_manifest(families, golden_path=golden)
+
+    def test_build_refuses_repeated_seed_in_plan(self):
+        families = load_families(FAMILIES_TOML)
+        name = families[0]["name"]
+        seed = families[0]["eval_seed_range"][0]
+        with pytest.raises(SysPromptError, match="repeats a seed"):
+            build_sysprompt_entries(families, {name: [seed, seed]})
 
     def test_manifest_refuses_golden_from_train_seeds(self, tmp_path):
         families = load_families(FAMILIES_TOML)
@@ -249,13 +283,17 @@ class TestCommittedPilot:
         assert committed == regenerated
 
     def test_committed_manifest_matches_regeneration(self):
+        """Generator output must match regeneration exactly; the pilot review
+        block is owner-owned sign-off metadata and may differ (pending →
+        approved) without constituting drift."""
         if not PILOT_MANIFEST.exists():
             pytest.skip("sysprompt.json not built yet")
         regenerated = build_sysprompt_manifest(
             load_families(FAMILIES_TOML), golden_path=PILOT_GOLDEN
         )
         committed = json.loads(PILOT_MANIFEST.read_text(encoding="utf-8"))
-        assert committed == regenerated
+        assert _without_review(committed) == _without_review(regenerated)
+        assert committed["pilot"]["review"]["status"] in ("pending", "approved")
 
     def test_pilot_uses_only_eval_seeds_never_train(self):
         """场景族不跨 split, asserted against the committed artifacts."""
@@ -276,6 +314,13 @@ def _inclusive(bounds: list[int]) -> tuple[int, int]:
     """Registry ranges are inclusive [lo, hi]; range() needs hi + 1."""
     lo, hi = bounds
     return (lo, hi + 1)
+
+
+def _without_review(manifest: dict) -> dict:
+    """Manifest minus the owner-owned review block (drift comparison view)."""
+    stripped = json.loads(json.dumps(manifest))  # deep copy
+    stripped.get("pilot", {}).pop("review", None)
+    return stripped
 
 
 _MINIMAL_TOML = """

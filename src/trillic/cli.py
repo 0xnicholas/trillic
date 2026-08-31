@@ -22,6 +22,7 @@ from trillic.sysprompt import (
     build_sysprompt_entries,
     build_sysprompt_manifest,
     load_families,
+    make_review,
 )
 
 _ERROR_EXIT_CODE = 1
@@ -98,6 +99,18 @@ def build_parser() -> argparse.ArgumentParser:
     sysprompt_manifest_parser.add_argument(
         "--golden", type=Path, default=None,
         help="frozen golden jsonl to verify against regeneration and record",
+    )
+    sysprompt_manifest_parser.add_argument(
+        "--review-status", choices=("pending", "approved"), default=None,
+        help="owner sign-off record for the pilot (requires --golden)",
+    )
+    sysprompt_manifest_parser.add_argument(
+        "--reviewer", default=None,
+        help="who performed the review (requires --review-status)",
+    )
+    sysprompt_manifest_parser.add_argument(
+        "--review-notes", default=None,
+        help="free-text review notes (requires --review-status)",
     )
     sysprompt_manifest_parser.add_argument(
         "--out", required=True, type=Path, help="output manifest JSON path"
@@ -225,7 +238,16 @@ def _golden_build_rag(args: argparse.Namespace) -> int:
 
 def _golden_manifest_sysprompt(args: argparse.Namespace) -> int:
     families = load_families(args.families)
-    manifest = build_sysprompt_manifest(families, golden_path=args.golden)
+    review = None
+    if args.review_status is not None:
+        if args.golden is None:
+            raise ValueError("--review-status requires --golden (no pilot to review)")
+        review = make_review(
+            args.review_status, reviewer=args.reviewer, notes=args.review_notes or ""
+        )
+    manifest = build_sysprompt_manifest(
+        families, golden_path=args.golden, review=review
+    )
     args.out.write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )
