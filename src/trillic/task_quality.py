@@ -23,8 +23,9 @@ from trillic.bootstrap import (
 )
 from trillic.clients.gateway import GatewayClient
 from trillic.golden import GoldenItem
-from trillic.judge import judge_prompt, parse_judge_scores, score_of
+from trillic.judge import judge_prompt, parse_judge_scores, rubric_sha256, score_of
 from trillic.quality import rounded_mean
+from trillic.resume import Replay, ResumeError
 from trillic.tasks import task_prompt
 
 # Per-row rounding matches rounded_mean's 4-decimal metrics caliber.
@@ -53,13 +54,25 @@ class TaskQualityLoop:
         judge_model: str,
         seed: int,
         n_resamples: int,
+        replay: Replay | None = None,
     ) -> None:
         self._gateway = gateway
         self._answer_model = answer_model
         self._judge_model = judge_model
         self._seed = seed
         self._n_resamples = n_resamples
+        # Interrupt-resume ledger (issue #8): when set, recorded gateway
+        # results are replayed (never re-billed) under content-addressed
+        # conditions; see trillic.resume.
+        self._replay = replay
+        if replay is not None:
+            replay.check_pins(
+                answer_model=answer_model,
+                judge_model=judge_model,
+                rubric_sha256=rubric_sha256(),
+            )
         self._originals: dict[str, dict] | None = None
+        self._stats = {"answers_fresh": 0, "answers_reused": 0, "judges_fresh": 0, "judges_reused": 0}
         # Models the gateway REPORTS serving (the version of record for the
         # pin discipline — may differ from the requested pins when the
         # gateway aliases).
@@ -73,13 +86,36 @@ class TaskQualityLoop:
             "judge": sorted(self._served_judge_models),
         }
 
-    def prime_originals(self, items: list[GoldenItem]) -> None:
-        """Answer + judge the ORIGINAL prompts once (level-independent)."""
+    def call_stats(self) -> dict[str, int]:
+        """Run-level gateway-call accounting (fresh = billed, reused = replayed)."""
+        return dict(self._stats)
+
+    def prime_originals(self, items: list[GoldenItem], golden_sha256: str | None = None) -> None:
+        """Answer + judge the ORIGINAL prompts once (level-independent).
+
+        With a replay ledger whose golden sha matches, originals are
+        replayed from the prior run (zero gateway calls)."""
         if self._originals is not None:
             raise TaskQualityError("prime_originals must be called exactly once per run")
-        self._originals = {
-            item.id: self._answer_and_judge(item, item.prompt) for item in items
-        }
+        if self._replay is not None:
+            self._replay.check_golden(golden_sha256)
+        self._originals = {}
+        for item in items:
+            recorded = self._replay.originals.get(item.id) if self._replay else None
+            if recorded is not None:
+                self._stats["answers_reused"] += 1
+                self._stats["judges_reused"] += 1
+                self._originals[item.id] = {
+                    "answer": recorded["answer"],
+                    "scores": recorded["scores"],
+                    "score": score_of(recorded["scores"]),
+                    "source": "reused",
+                }
+            else:
+                self._originals[item.id] = {
+                    **self._answer_and_judge(item, item.prompt),
+                    "source": "fresh",
+                }
 
     def original_score(self, item_id: str) -> float:
         if self._originals is None:
@@ -113,11 +149,30 @@ class TaskQualityLoop:
                     "see the same golden items prime_originals saw"
                 )
             original = self._originals[item.id]
-            compressed = self._answer_and_judge(item, refined)
+            recorded = (
+                self._replay.compressed.get((level, item.id)) if self._replay else None
+            )
+            if recorded is not None and recorded["payload"] == refined:
+                # content-addressed hit: same compression, same answer
+                self._stats["answers_reused"] += 1
+                self._stats["judges_reused"] += 1
+                compressed = {
+                    "answer": recorded["answer"],
+                    "scores": recorded["scores"],
+                    "score": score_of(recorded["scores"]),
+                    "source": "reused",
+                }
+            else:
+                compressed = {
+                    **self._answer_and_judge(item, refined),
+                    "source": "fresh",
+                }
             rows.append(
                 {
                     "id": item.id,
                     "load_type": item.load_type,
+                    "source_original": original["source"],
+                    "source_compressed": compressed["source"],
                     "original_answer": original["answer"],
                     "compressed_answer": compressed["answer"],
                     "original_judge_scores": original["scores"],
@@ -153,15 +208,17 @@ class TaskQualityLoop:
 
     def _answer_and_judge(self, item: GoldenItem, payload: str) -> dict:
         """Answer the load-type task for `payload`, judge against the
-        golden key_points. One answer call + one judge call."""
+        golden key_points. One answer call + one judge call (both billed)."""
         key_points = list(item.key_points)
         answered = self._gateway.chat(
             self._answer_model, task_prompt(item.load_type, payload)
         )
         self._served_answer_models.add(answered.model)
+        self._stats["answers_fresh"] += 1
         judged = self._gateway.chat(
             self._judge_model, judge_prompt(key_points, answered.content)
         )
         self._served_judge_models.add(judged.model)
+        self._stats["judges_fresh"] += 1
         scores = parse_judge_scores(judged.content, len(key_points))
         return {"answer": answered.content, "scores": scores, "score": score_of(scores)}

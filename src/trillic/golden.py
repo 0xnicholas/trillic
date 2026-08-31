@@ -67,6 +67,35 @@ def load_golden(path: Path, *, require_eval_split: bool = True) -> list[GoldenIt
     return items
 
 
+def load_golden_set(
+    paths: list[Path], *, require_eval_split: bool = True
+) -> tuple[list[GoldenItem], bytes]:
+    """Load multiple golden jsonl files as ONE set (issue #8: the pilot
+    combines the three per-type files on the command line).
+
+    Returns (items, combined bytes). The combined bytes are the argv-order
+    concatenation — that is the run's golden identity (sha256 in metrics).
+    Duplicate ids ACROSS files are rejected (unique ids are a set-level
+    invariant, not a per-file one).
+    """
+    if not paths:
+        raise GoldenError("at least one golden file is required")
+    items: list[GoldenItem] = []
+    combined = bytearray()
+    seen: set[str] = set()
+    for path in paths:
+        for item in load_golden(path, require_eval_split=require_eval_split):
+            if item.id in seen:
+                raise GoldenError(
+                    f"{path}: duplicate id {item.id!r} across the golden set "
+                    "(ids must be unique across ALL files on the command line)"
+                )
+            seen.add(item.id)
+            items.append(item)
+        combined += Path(path).read_bytes()
+    return items, bytes(combined)
+
+
 def _scan_golden(
     path: Path, *, require_eval_split: bool
 ) -> tuple[list[GoldenItem], list[str]]:

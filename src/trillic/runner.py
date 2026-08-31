@@ -28,12 +28,13 @@ from trillic.clients.sidecar import (
     StubRefineClient,
 )
 from trillic.config import RunConfig
-from trillic.golden import GoldenItem, load_golden
+from trillic.golden import GoldenItem, load_golden_set
 from trillic.judge import RUBRIC_VERSION, rubric_sha256
 from trillic.native_tokens import NativeCounter, build_native_counter
 from trillic.quality import fact_recall, percentile, rounded_mean, text_token_f05
 from trillic.report import render_report_md, write_run_dir
-from trillic.task_quality import TaskQualityLoop
+from trillic.resume import Replay, load_replay_from_run_dir
+from trillic.task_quality import TaskQualityError, TaskQualityLoop
 from trillic.tokens import TokenCounter, compression_ratio, kept_ratio
 
 METRICS_SCHEMA_VERSION = 3
@@ -62,15 +63,38 @@ def resolve_native_vocab(config: RunConfig, config_path: Path) -> Path | None:
     return vocab
 
 
-def run_eval(config: RunConfig, config_path: Path, golden_path: Path, out_root: Path) -> Path:
-    """Run the evaluation sweep and write the run directory."""
-    items = load_golden(golden_path)
+def run_eval(
+    config: RunConfig,
+    config_path: Path,
+    golden_path: Path | list[Path],
+    out_root: Path,
+    resume_from: Path | None = None,
+) -> Path:
+    """Run the evaluation sweep and write the run directory.
+
+    golden_path takes one file or several (issue #8: the pilot combines
+    the per-type golden files; combined bytes in argv order are the run's
+    golden identity). resume_from replays a prior run's gateway ledger —
+    zero duplicate billing for content-identical work (issue #8).
+    """
+    golden_paths = [golden_path] if isinstance(golden_path, Path) else list(golden_path)
+    items, golden_bytes = load_golden_set(golden_paths)
+    golden_sha = hashlib.sha256(golden_bytes).hexdigest()
     counter = TokenCounter(config.tiktoken_encoding)
     native = build_native_counter(
         config.native_flavor, resolve_native_vocab(config, config_path)
     )
     sidecar = build_refine_client(config)
     levels = config.effective_levels()
+
+    replay = None
+    if resume_from is not None:
+        if not config.task_quality:
+            raise TaskQualityError(
+                "--resume-from requires quality.task_quality = true: the "
+                "ledger being replayed IS the task-quality record"
+            )
+        replay = load_replay_from_run_dir(resume_from)
 
     task_loop = None
     if config.task_quality:
@@ -80,10 +104,11 @@ def run_eval(config: RunConfig, config_path: Path, golden_path: Path, out_root: 
             judge_model=config.judge_model,
             seed=config.seed,
             n_resamples=config.bootstrap_samples,
+            replay=replay,
         )
         # Originals are level-independent: answered + judged exactly once,
         # so a sweep pays for them one time only.
-        task_loop.prime_originals(items)
+        task_loop.prime_originals(items, golden_sha256=golden_sha)
 
     level_blocks = []
     refine_meta: list[tuple[GoldenItem, RefineResult, float]] = []
@@ -110,13 +135,20 @@ def run_eval(config: RunConfig, config_path: Path, golden_path: Path, out_root: 
     metrics = _build_metrics(
         config=config,
         config_path=config_path,
-        golden_path=golden_path,
+        golden_paths=golden_paths,
+        golden_bytes=golden_bytes,
+        golden_sha=golden_sha,
         refine_results=refine_meta,
         level_blocks=level_blocks,
         counter=counter,
         native_caliber=native.caliber_name,
         levels=levels,
-        served_models=task_loop.served_models() if task_loop is not None else None,
+        task_quality_meta=_task_quality_meta(
+            config,
+            served_models=task_loop.served_models() if task_loop is not None else None,
+            gateway_calls=task_loop.call_stats() if task_loop is not None else None,
+            resumed_from=resume_from,
+        ),
     )
     report_md = render_report_md(metrics)
     return write_run_dir(out_root, metrics, report_md)
@@ -227,16 +259,18 @@ def _build_level_block(
 def _build_metrics(
     config: RunConfig,
     config_path: Path,
-    golden_path: Path,
+    golden_paths: list[Path],
+    golden_bytes: bytes,
+    golden_sha: str,
     refine_results: list[tuple[GoldenItem, RefineResult, float]],
     level_blocks: list[dict],
     counter: TokenCounter,
     native_caliber: str,
     levels: list[float],
-    served_models: dict[str, list[str]] | None = None,
+    task_quality_meta: dict,
 ) -> dict:
     config_raw = Path(config_path).read_text(encoding="utf-8")
-    golden_raw_bytes = Path(golden_path).read_bytes()
+    golden_raw_bytes = golden_bytes
 
     refine_models = sorted(
         {
@@ -263,8 +297,8 @@ def _build_metrics(
             "parsed": config.snapshot(),
         },
         "golden": {
-            "source_path": str(golden_path),
-            "sha256": hashlib.sha256(golden_raw_bytes).hexdigest(),
+            "source_path": ",".join(str(path) for path in golden_paths),
+            "sha256": golden_sha,
             "item_count": len(level_blocks[0]["items"]) if level_blocks else 0,
         },
         "sidecar": {
@@ -276,7 +310,7 @@ def _build_metrics(
             # in metrics.levels — no misleading "primary" here.
             "aggressiveness": levels[0] if len(levels) == 1 else None,
         },
-        "task_quality": _task_quality_meta(config, served_models),
+        "task_quality": task_quality_meta,
         "metrics": {
             "tiktoken_encoding": counter.encoding_name,
             "native_caliber": native_caliber,
@@ -287,7 +321,10 @@ def _build_metrics(
 
 
 def _task_quality_meta(
-    config: RunConfig, served_models: dict[str, list[str]] | None = None
+    config: RunConfig,
+    served_models: dict[str, list[str]] | None = None,
+    gateway_calls: dict[str, int] | None = None,
+    resumed_from: Path | None = None,
 ) -> dict:
     """Run-level task-quality provenance (issue #7): the pinned judge +
     answer models and the versioned rubric identity, so two runs can never
@@ -312,7 +349,19 @@ def _task_quality_meta(
     if served_models is not None:
         meta["served_answer_models"] = served_models["answer"]
         meta["served_judge_models"] = served_models["judge"]
+    if gateway_calls is not None:
+        meta["gateway_calls"] = gateway_calls
+    if resumed_from is not None:
+        meta["resumed_from"] = {
+            "run_id": _prior_run_id(resumed_from),
+            "path": str(resumed_from),
+        }
     return meta
+
+
+def _prior_run_id(run_dir: Path) -> str:
+    """Best-effort prior run id for the resume trail (dir name is the id)."""
+    return Path(run_dir).name
 
 
 def _run_id(config: RunConfig, config_raw: str, golden_bytes: bytes, created_at: str) -> str:

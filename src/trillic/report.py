@@ -91,7 +91,17 @@ def _task_quality_header_lines(task_quality: dict) -> list[str]:
             f"judge served as {', '.join(task_quality['served_judge_models'])}"
         )
     alias_note = f" (gateway aliasing: {'; '.join(served)})" if served else ""
+    extra = []
+    calls = task_quality.get("gateway_calls")
+    if calls is not None:
+        reused = calls.get("answers_reused", 0) + calls.get("judges_reused", 0)
+        fresh = calls.get("answers_fresh", 0) + calls.get("judges_fresh", 0)
+        extra.append(f"- gateway calls this run: {fresh} fresh / {reused} reused")
+    resumed = task_quality.get("resumed_from")
+    if resumed is not None:
+        extra.append(f"- resumed from run {resumed['run_id']}")
     return [
+        *extra,
         f"- task quality: judge {task_quality['judge_model']}"
         f" (rubric v{task_quality['judge_rubric_version']}"
         f" sha256 `{task_quality['judge_rubric_sha256'][:12]}…`),"

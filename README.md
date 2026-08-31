@@ -91,6 +91,12 @@ uv run trillic eval run \
   永不相交),生成记录在 `eval/manifests/dialogue.json`(含逐条
   content_sha1 漂移拒)。golden 文件 `eval/golden/dialogue_pilot.jsonl`
   (10 条,682–1266 tiktoken tokens/条)。
+- **中断恢复 + 定容工具**(issue #8 零花费前置):`--golden` 支持多文件
+  拼合(三类 pilot 一条命令跑);`--resume-from <run_dir>` 以内容寻址复用
+  上一次运行的网关台账(原文答案按 golden sha + 质量钉子复用,压缩侧
+  仅当重压缩逐字一致才复用,漂移即诚实重计费),报告与 metrics 记
+  fresh/reused 计数与恢复来源;`eval sizing --run <dir>` 从已跑 run 出
+  judge 方差、效应量(Cohen's d)与单侧 z 检验反推的每类定容 n。
 - **假桩注入**:sidecar(POST /refine)与网关客户端均为可注入协议,
   配置 `mode = "stub" | "http"` 切换;全部测试零网络。
 - **离线 tiktoken**:测试通过仓内缓存(`eval/assets/tiktoken_cache/`)
@@ -102,7 +108,6 @@ uv run trillic eval run \
 
 ## 状态
 
-阶段 1(评测基线)进行中:评测 harness walking skeleton(#2)、Golden
-骨架 + RAG pilot(#3)、system prompt pilot(#4)、多轮对话 pilot(#5)、
-指标全集 + 扫档 + 延迟(#6)、任务级质量 + judge + bootstrap(#7)已落地;
-真链路冒烟与双 checkpoint 基线见后续子票。
+阶段 1(评测基线)进行中:#2–#7 已落地;#8 零花费前置(多 golden 拼合、
+中断恢复台账、定容工具)就绪,真链路冒烟待 owner 注入网关密钥后执行;
+#9 双 checkpoint 收官在后。

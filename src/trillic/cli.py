@@ -25,7 +25,10 @@ from trillic.golden import GoldenError, collect_golden_errors
 from trillic.judge import JudgeError
 from trillic.longbench import LongBenchError, build_manifest, build_rag_entries
 from trillic.report import ReportWriterError
+from trillic.resume import ResumeError
 from trillic.runner import run_eval
+from trillic.sizing import sizing_report
+from trillic.task_quality import TaskQualityError
 from trillic.sysprompt import (
     SysPromptError,
     build_sysprompt_entries,
@@ -54,10 +57,26 @@ def build_parser() -> argparse.ArgumentParser:
         "--config", required=True, type=Path, help="run configuration (TOML)"
     )
     run_parser.add_argument(
-        "--golden", required=True, type=Path, help="golden set (jsonl)"
+        "--golden", required=True, type=Path, nargs="+",
+        help="golden set (jsonl); multiple files combine into one exam (argv order)",
     )
     run_parser.add_argument(
         "--out", type=Path, default=Path("runs"), help="runs root (default: ./runs)"
+    )
+    run_parser.add_argument(
+        "--resume-from", type=Path, default=None,
+        help="prior run dir whose gateway ledger to replay (content-addressed; "
+        "identical work is never re-billed)",
+    )
+
+    sizing_parser = eval_sub.add_parser(
+        "sizing", help="judge variance + required-n report from a completed run"
+    )
+    sizing_parser.add_argument(
+        "--run", required=True, type=Path, help="run directory (with metrics.json)"
+    )
+    sizing_parser.add_argument(
+        "--out", type=Path, default=None, help="optional JSON output path"
     )
 
     golden_parser = subparsers.add_parser(
@@ -190,6 +209,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "eval" and args.eval_command == "run":
         return _eval_run(args)
+    if args.command == "eval" and args.eval_command == "sizing":
+        return _eval_sizing(args)
     if args.command == "golden":
         try:
             if args.golden_command == "validate":
@@ -227,8 +248,9 @@ def _eval_run(args: argparse.Namespace) -> int:
         run_dir = run_eval(
             config=config,
             config_path=args.config,
-            golden_path=args.golden,
+            golden_path=args.golden if len(args.golden) > 1 else args.golden[0],
             out_root=args.out,
+            resume_from=args.resume_from,
         )
     except (
         ConfigError,
@@ -245,6 +267,72 @@ def _eval_run(args: argparse.Namespace) -> int:
         return _ERROR_EXIT_CODE
     print(str(run_dir))
     return 0
+
+
+def _eval_sizing(args: argparse.Namespace) -> int:
+    """Judge variance + effect size + required-n from a run's task-quality rows."""
+    metrics_path = Path(args.run) / "metrics.json"
+    try:
+        metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        print(f"error: no metrics.json under {args.run}", file=sys.stderr)
+        return _ERROR_EXIT_CODE
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"error: cannot read {metrics_path}: {e}", file=sys.stderr)
+        return _ERROR_EXIT_CODE
+    task_quality = metrics.get("task_quality") or {}
+    if not task_quality.get("enabled"):
+        print(
+            "error: the run has no task_quality data (quality.task_quality "
+            "was disabled) — sizing needs judged deltas",
+            file=sys.stderr,
+        )
+        return _ERROR_EXIT_CODE
+    rows = [
+        row
+        for level in metrics.get("metrics", {}).get("levels", [])
+        for row in level.get("aggregate", {}).get("task_quality", {}).get("items", [])
+    ]
+    if not rows:
+        print("error: the run has no task-quality rows to size on", file=sys.stderr)
+        return _ERROR_EXIT_CODE
+    report = sizing_report(rows)
+    if args.out is not None:
+        Path(args.out).write_text(
+            json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
+    _print_sizing(report)
+    return 0
+
+
+def _print_sizing(report: dict) -> None:
+    overall = report["overall"]
+    print(
+        f"overall: n={overall['n_observed']}, "
+        f"mean delta {overall['mean_delta']:+.4f}, "
+        f"std {overall['std_delta']:.4f}, "
+        f"Cohen's d {overall['cohens_d'] if overall['cohens_d'] is not None else float('nan'):+.4f}"
+        if overall["cohens_d"] is not None
+        else f"overall: n={overall['n_observed']}, mean delta {overall['mean_delta']:+.4f}, "
+        f"std {overall['std_delta']:.4f}, Cohen's d undefined"
+    )
+    required = (
+        f"required n per class ≈ {overall['n_required']} "
+        f"(raw {overall['n_required_raw']:.2f})"
+        if overall["n_required_raw"] is not None
+        else "required n: degenerate (zero variance or zero effect)"
+    )
+    print(required)
+    for name, stats in report["by_load_type"].items():
+        need = (
+            f"required n ≈ {stats['n_required']}"
+            if stats["n_required_raw"] is not None
+            else "degenerate"
+        )
+        print(
+            f"  {name}: n={stats['n_observed']}, "
+            f"mean delta {stats['mean_delta']:+.4f}, {need}"
+        )
 
 
 def _golden_validate(args: argparse.Namespace) -> int:
