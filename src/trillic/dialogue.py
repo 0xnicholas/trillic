@@ -28,7 +28,8 @@ Serialization (inherited from the old corpus builder): one "role: content"
 turn per line; turn content may span multiple lines (code blocks). The
 prompt ends with the final user recall message.
 
-key_points are HISTORY facts (名称/日期/先前决定 — never constraints, never
+key_points are HISTORY facts (names / dates / prior decisions — never
+constraints, never
 final-message-only statements): each point quotes the history verbatim, so
 its survival is mechanically judgeable after compression.
 
@@ -60,7 +61,8 @@ class DialogueTemplate:
     when the "include_optional_round" slot draws True (length variation,
     mirroring the old generator's probabilistic deeper round).
     final_user_template: the last turn — a user message asking the
-    assistant to recall history facts (考的是对话记忆压缩).
+    assistant to recall history facts (this load type tests memory-of-
+    conversation compression).
     """
 
     history_turns: tuple[tuple[str, str], ...]
