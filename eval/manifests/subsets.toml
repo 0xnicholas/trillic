@@ -1,0 +1,31 @@
+# LongBench subset registry — human-curated, committed.
+#
+# This file holds the LICENSE RESEARCH OUTPUT (issue #3: 逐子集训练使用许可
+# 检查). `trillic golden manifest` merges it with computed split counts into
+# eval/manifests/longbench.json. Edit here, regenerate there.
+#
+# train_use verdicts follow docs/data-strategy.md 硬约束 5: research-only /
+# non-commercial subsets are golden-only and must never enter training data.
+
+source_url = "https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip"
+
+[[subset]]
+name = "qasper"
+file = "qasper_e.jsonl"
+license = "CC BY-NC 4.0 (QASPER, Dasigi et al. 2021, AllenAI)"
+train_use = false
+note = "Non-commercial license: eval-only. Hard-excluded from phase-2 training data (data-strategy 硬约束 5)."
+
+[[subset]]
+name = "hotpotqa"
+file = "hotpotqa_e.jsonl"
+license = "CC BY-SA 4.0 (HotpotQA, Yang et al. 2018)"
+train_use = true
+note = "Train use permitted; attribution and share-alike obligations attach to derived artifacts. Multi-doc QA (concatenated wiki passages) — archetypal RAG shape."
+
+[[subset]]
+name = "gov_report"
+file = "gov_report_e.jsonl"
+license = "US federal government works (public domain; GovReport, Huang et al. 2021)"
+train_use = true
+note = "Works of the U.S. federal government are public domain; LongBench redistributes for benchmark use. Old-repo SOURCES.md precedent (2026-07-27)."

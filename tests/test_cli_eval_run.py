@@ -193,9 +193,16 @@ class TestCliErrors:
 
     def test_invalid_golden_entry_names_the_entry(self, tmp_path, fixture_config_path, capsys):
         bad_golden = tmp_path / "golden.jsonl"
+        source = {
+            "dataset": "handwritten", "subset": "test", "license": "original", "split": "eval",
+        }
         bad_golden.write_text(
-            json.dumps({"id": "good-1", "prompt": "p", "key_points": ["k"]}) + "\n"
-            + json.dumps({"id": "bad-2", "prompt": "p", "key_points": []}) + "\n"
+            json.dumps({"id": "good-1", "load_type": "rag", "prompt": "p",
+                        "key_points": ["k"], "source": source})
+            + "\n"
+            + json.dumps({"id": "bad-2", "load_type": "rag", "prompt": "p",
+                          "key_points": [], "source": source})
+            + "\n"
         )
         code = main(
             [

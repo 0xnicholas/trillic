@@ -9,3 +9,6 @@ runs/
 
 # Environment — credentials are env-only, never files
 .env
+
+# LongBench data bundle (gitignored; restore via curl, see eval/manifests/subsets.toml source_url)
+_downloads/

@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "split_method": "sha1(context + NUL + input) sorted ascending; first ceil(n/2) -> eval half, remainder -> train half",
+  "source_url": "https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip",
+  "subsets": [
+    {
+      "name": "qasper",
+      "file": "qasper_e.jsonl",
+      "file_sha256": "97d95c01221a17a2ce51f9180d65a671bf2998504a2ff0cccffe97e9b08444d8",
+      "entries": 224,
+      "eval_half": 112,
+      "train_half": 112,
+      "train_boundary_fingerprint": "743db4e3d732049e9ac6b5aaaf3026e91b96db2e",
+      "license": "CC BY-NC 4.0 (QASPER, Dasigi et al. 2021, AllenAI)",
+      "train_use": false,
+      "note": "Non-commercial license: eval-only. Hard-excluded from phase-2 training data (data-strategy 硬约束 5)."
+    },
+    {
+      "name": "hotpotqa",
+      "file": "hotpotqa_e.jsonl",
+      "file_sha256": "26a90a291cca5b2515bf466c6c3d1f57d8a4e67b0cf5aa39e1834913a15e6309",
+      "entries": 300,
+      "eval_half": 150,
+      "train_half": 150,
+      "train_boundary_fingerprint": "7b293b070af29c00dfda8ada1830298cf9617683",
+      "license": "CC BY-SA 4.0 (HotpotQA, Yang et al. 2018)",
+      "train_use": true,
+      "note": "Train use permitted; attribution and share-alike obligations attach to derived artifacts. Multi-doc QA (concatenated wiki passages) — archetypal RAG shape."
+    },
+    {
+      "name": "gov_report",
+      "file": "gov_report_e.jsonl",
+      "file_sha256": "0a3902fcf3d49f228549f02a2ef1ae84dbe8578b8be3d4611d54459487bdef84",
+      "entries": 300,
+      "eval_half": 150,
+      "train_half": 150,
+      "train_boundary_fingerprint": "7eb3e72fc9f6d8177e0c996e76b05b1177ce547f",
+      "license": "US federal government works (public domain; GovReport, Huang et al. 2021)",
+      "train_use": true,
+      "note": "Works of the U.S. federal government are public domain; LongBench redistributes for benchmark use. Old-repo SOURCES.md precedent (2026-07-27)."
+    }
+  ]
+}
