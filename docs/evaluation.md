@@ -40,6 +40,16 @@ pilot 验证 harness 端到端;用 pilot 实测 judge 方差,按"能分出效应
 | token F0.5 | BERTScore 式逐 token 对齐 | refine 运行时 guardrail 同款实现 |
 | 下游任务质量 | LLM judge 按 key_points 打分 | 任务级,本项目的主验收指标 |
 
+口径注记(issue #6 落地):harness 的 fact recall 与运行时 guardrail
+共用同一正则(`_FACT_PATTERN` 逐字复用,两侧必须同漂移);token F0.5
+与 guardrail 同 F0.5 代数(recall/precision 方向、β²=0.25),但相似度
+用 token 恒等对齐替代 embedding 余弦(harness 不带模型运行时)——对
+抽取式压缩(严格子序列)恒等对齐是精确的,harness F0.5 是 embedding
+口径的下界,方向与运行时阈值一致。压缩延迟 p95 用线性插值
+percentile(旧 benchmark 口径)。模型原生计数器参数化:`word` /
+`wordpiece` / `sentencepiece` 三 flavor(`[metrics]` 配置),换基底只改
+配置不改代码。
+
 ## 验收标准
 
 微调模型 vs 公开 checkpoint(`llmlingua-2-bert-base-multilingual-cased-meetingbank`)

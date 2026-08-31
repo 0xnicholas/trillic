@@ -68,6 +68,75 @@ url = "http://gw:2"
         assert config.aggressiveness == 0.2
 
 
+class TestSweepLevels:
+    def test_levels_default_to_single_aggressiveness(self, tmp_path):
+        config = load_config(write_config(tmp_path, "[run]\naggressiveness = 0.3\n"))
+        assert config.effective_levels() == [0.3]
+
+    def test_unset_levels_effective_default(self):
+        assert RunConfig().effective_levels() == [0.2]
+
+    def test_explicit_sweep_parses_in_order(self, tmp_path):
+        path = write_config(
+            tmp_path,
+            "[run]\nlevels = [0.1, 0.2, 0.3, 0.4, 0.5]\n",
+        )
+        config = load_config(path)
+        assert config.effective_levels() == [0.1, 0.2, 0.3, 0.4, 0.5]
+
+    def test_empty_levels_is_rejected(self, tmp_path):
+        with pytest.raises(ConfigError, match="levels"):
+            load_config(write_config(tmp_path, "[run]\nlevels = []\n"))
+
+    def test_out_of_scope_level_is_rejected(self, tmp_path):
+        # Sweep scope is pinned to 0.1-0.5 (docs/evaluation.md: 0.5 以上档位
+        # out of scope for this phase); the config is the guard.
+        with pytest.raises(ConfigError, match="levels"):
+            load_config(write_config(tmp_path, "[run]\nlevels = [0.1, 0.9]\n"))
+
+    def test_non_numeric_level_is_rejected(self, tmp_path):
+        with pytest.raises(ConfigError, match="levels"):
+            load_config(write_config(tmp_path, "[run]\nlevels = [0.1, \"x\"]\n"))
+
+    def test_duplicate_levels_are_rejected(self, tmp_path):
+        with pytest.raises(ConfigError, match="unique"):
+            load_config(write_config(tmp_path, "[run]\nlevels = [0.2, 0.2]\n"))
+
+
+class TestNativeTokenizerConfig:
+    def test_default_flavor_is_word(self, tmp_path):
+        config = load_config(write_config(tmp_path, ""))
+        assert config.native_flavor == "word"
+        assert config.native_vocab is None
+
+    def test_flavor_and_vocab_parse(self, tmp_path):
+        path = write_config(
+            tmp_path,
+            '[metrics]\nnative_flavor = "wordpiece"\nnative_vocab = "assets/vocab.txt"\n',
+        )
+        config = load_config(path)
+        assert config.native_flavor == "wordpiece"
+        assert config.native_vocab == "assets/vocab.txt"
+
+    def test_unknown_flavor_is_rejected(self, tmp_path):
+        with pytest.raises(ConfigError, match="native_flavor"):
+            load_config(write_config(tmp_path, '[metrics]\nnative_flavor = "bpe"\n'))
+
+    @pytest.mark.parametrize("flavor", ["wordpiece", "sentencepiece"])
+    def test_subword_flavors_require_vocab(self, tmp_path, flavor):
+        with pytest.raises(ConfigError, match="requires a vocab"):
+            load_config(write_config(tmp_path, f'[metrics]\nnative_flavor = "{flavor}"\n'))
+
+    def test_word_flavor_rejects_stray_vocab(self, tmp_path):
+        with pytest.raises(ConfigError, match="native_vocab"):
+            load_config(
+                write_config(
+                    tmp_path,
+                    '[metrics]\nnative_flavor = "word"\nnative_vocab = "v.txt"\n',
+                )
+            )
+
+
 class TestValidation:
     def test_unknown_key_is_rejected_by_name(self, tmp_path):
         path = write_config(tmp_path, "[sidecar]\nmode = \"stub\"\ntimeout = 30\n")

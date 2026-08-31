@@ -62,6 +62,10 @@ def strip_volatile(metrics):
     stripped.pop("created_at")
     stripped["config"].pop("source_path")
     stripped["golden"].pop("source_path")
+    for level in stripped["metrics"]["levels"]:
+        for item in level["items"]:
+            item.pop("latency_seconds")
+        level["aggregate"].pop("latency")
     return stripped
 
 
@@ -70,6 +74,8 @@ class TestEvalRunHappyPath:
     def _run(self, tmp_path, fixture_config_path, fixture_golden_path):
         self.run_dir = run_eval(tmp_path, fixture_config_path, fixture_golden_path)
         self.metrics = load_metrics(self.run_dir)
+        self.levels = self.metrics["metrics"]["levels"]
+        self.level = self.levels[0]  # fixture config sweeps a single level
         self.golden_rows = [
             json.loads(line)
             for line in fixture_golden_path.read_text().splitlines()
@@ -99,10 +105,15 @@ class TestEvalRunHappyPath:
         assert self.metrics["golden"]["sha256"] == hashlib.sha256(raw).hexdigest()
         assert self.metrics["golden"]["item_count"] == len(self.golden_rows)
 
+    def test_metrics_schema_and_levels_structure(self):
+        assert self.metrics["schema_version"] == 2
+        assert [lv["aggressiveness"] for lv in self.levels] == [0.2]
+        assert self.metrics["metrics"]["native_caliber"] == "word"
+
     def test_per_item_ratios_match_hand_checked_constants(self):
         """The letter of the acceptance criterion: literal hand-recorded
         numbers, not just in-test recomputation."""
-        items = {i["id"]: i for i in self.metrics["metrics"]["items"]}
+        items = {i["id"]: i for i in self.level["items"]}
         for entry_id, (orig, comp, kept, removed) in HAND_CHECKED.items():
             item = items[entry_id]
             assert item["original_tokens"] == orig
@@ -111,7 +122,7 @@ class TestEvalRunHappyPath:
             assert item["compression_ratio"] == removed
 
     def test_per_item_tiktoken_ratios_match_independent_recomputation(self):
-        items = self.metrics["metrics"]["items"]
+        items = self.level["items"]
         assert [i["id"] for i in items] == [row["id"] for row in self.golden_rows]
         for item, row in zip(items, self.golden_rows):
             expected_original = len(ENCODING.encode(row["prompt"], disallowed_special=()))
@@ -126,14 +137,14 @@ class TestEvalRunHappyPath:
             )
 
     def test_compressed_text_is_extractive_subsequence(self):
-        for item, row in zip(self.metrics["metrics"]["items"], self.golden_rows):
+        for item, row in zip(self.level["items"], self.golden_rows):
             source_words = iter(row["prompt"].split())
             kept_words = item["compressed_text"].split()
             assert all(word in source_words for word in kept_words)
 
     def test_aggregate_sums_and_ratios(self):
-        items = self.metrics["metrics"]["items"]
-        agg = self.metrics["metrics"]["aggregate"]
+        items = self.level["items"]
+        agg = self.level["aggregate"]
         total_o = sum(i["original_tokens"] for i in items)
         total_c = sum(i["compressed_tokens"] for i in items)
         assert agg["total_original_tokens"] == total_o
@@ -162,6 +173,95 @@ class TestEvalRunHappyPath:
         assert sidecar["compress"] is True
         assert sidecar["aggressiveness"] == 0.2
         assert self.metrics["metrics"]["tiktoken_encoding"] == "cl100k_base"
+
+    def test_per_item_quality_metrics_present_and_sound(self):
+        """fact recall + token F0.5 on every item, consistent with the
+        pure functions (stub compression drops words, so recall < 1 is
+        expected on fact-bearing prompts)."""
+        from trillic.quality import fact_recall, text_token_f05
+
+        for item, row in zip(self.level["items"], self.golden_rows):
+            assert item["fact_recall"] == round(
+                fact_recall(row["prompt"], item["compressed_text"]), 4
+            )
+            assert item["token_f05"] == round(
+                text_token_f05(row["prompt"], item["compressed_text"]), 4
+            )
+            assert 0.0 <= item["fact_recall"] <= 1.0
+            assert 0.0 <= item["token_f05"] <= 1.0
+
+    def test_native_caliber_counts_present(self):
+        """word flavor = whitespace: native counts must equal the stub
+        sidecar's own word counts (cross-check of the second ratio
+        caliber)."""
+        for item in self.level["items"]:
+            assert item["native_original_tokens"] == item["sidecar_original_tokens"]
+            assert item["native_compressed_tokens"] == item["sidecar_compressed_tokens"]
+            assert item["native_kept_ratio"] == round(
+                item["native_compressed_tokens"] / item["native_original_tokens"], 4
+            )
+            assert item["native_compression_ratio"] == round(
+                1 - item["native_compressed_tokens"] / item["native_original_tokens"], 4
+            )
+
+    def test_latency_recorded_per_item_and_percentiles(self):
+        latencies = [item["latency_seconds"] for item in self.level["items"]]
+        assert all(lat >= 0 for lat in latencies)
+        latency = self.level["aggregate"]["latency"]
+        assert latency["p95_seconds"] >= latency["p50_seconds"] >= 0
+        assert latency["mean_seconds"] >= 0
+
+    def test_task_quality_placeholder_present(self):
+        """Issue #7 fills this in; the placeholder makes the fourth metric
+        slot structural now."""
+        assert self.level["aggregate"]["task_quality"] is None
+
+    def test_report_md_covers_all_four_metric_slots(self):
+        report = (self.run_dir / "report.md").read_text()
+        assert "## Level 0.2" in report
+        assert "fact recall" in report.lower()
+        assert "f0.5" in report.lower()
+        assert "p95" in report.lower()
+        assert "word" in report  # native caliber named
+        assert "task-level quality" in report  # placeholder slot
+
+
+class TestSweepRun:
+    """0.1-0.5 sweep structure, demonstrated under stubs."""
+
+    @pytest.fixture(autouse=True)
+    def _run(self, tmp_path, fixture_golden_path):
+        config = tmp_path / "sweep.toml"
+        config.write_text(
+            'name = "sweep"\n\n[run]\nlevels = [0.1, 0.2, 0.3, 0.4, 0.5]\n',
+            encoding="utf-8",
+        )
+        self.run_dir = run_eval(tmp_path, config, fixture_golden_path)
+        self.metrics = load_metrics(self.run_dir)
+
+    def test_five_level_blocks_in_order(self):
+        levels = self.metrics["metrics"]["levels"]
+        assert [lv["aggressiveness"] for lv in levels] == [0.1, 0.2, 0.3, 0.4, 0.5]
+        for level in levels:
+            assert len(level["items"]) == 3
+
+    def test_compression_monotonically_deeper_for_stub_policy(self):
+        """Stub drops round(10*a) of every 10-word block: deeper levels
+        must compress strictly more (tiktoken corpus caliber)."""
+        levels = self.metrics["metrics"]["levels"]
+        corpus = [
+            lv["aggregate"]["total_compressed_tokens"] for lv in levels
+        ]
+        assert corpus == sorted(corpus, reverse=True)
+        assert corpus[0] > corpus[-1]
+
+    def test_sidecar_block_records_levels_not_misleading_primary(self):
+        assert self.metrics["sidecar"]["aggressiveness"] is None
+
+    def test_report_lists_every_level(self):
+        report = (self.run_dir / "report.md").read_text()
+        for level in (0.1, 0.2, 0.3, 0.4, 0.5):
+            assert f"## Level {level}" in report
 
 
 class TestDeterminismAndImmutability:

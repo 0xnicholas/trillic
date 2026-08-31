@@ -1,13 +1,17 @@
 """`eval run` orchestration: golden + config in, immutable run dir out.
 
-Walking-skeleton scope (issue #2): compress every golden item through the
-(injectable) refine-sidecar client, measure the tiktoken-caliber compression
-ratio, and write metrics.json + report.md. Downstream tasks, judges, and
-bootstrap CIs arrive with issues #6/#7 on the same client seams.
+Scope (issues #2 + #6): compress every golden item through the (injectable)
+refine-sidecar client at every configured sweep level, measure compression
+in both token calibers (tiktoken billing + parameterized model-native),
+fact recall and token-alignment F0.5 (calibers shared with the runtime
+guardrail — see trillic.quality), and per-item refine latency with p50/p95
+per level, then write metrics.json + report.md. Task-level quality arrives
+with issue #7 on the same seams and is already a structural slot.
 """
 
 import hashlib
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -21,10 +25,12 @@ from trillic.clients.sidecar import (
 )
 from trillic.config import RunConfig
 from trillic.golden import GoldenItem, load_golden
+from trillic.native_tokens import build_native_counter
+from trillic.quality import fact_recall, percentile, text_token_f05
 from trillic.report import render_report_md, write_run_dir
 from trillic.tokens import TokenCounter, compression_ratio, kept_ratio
 
-METRICS_SCHEMA_VERSION = 1
+METRICS_SCHEMA_VERSION = 2
 
 
 def build_refine_client(config: RunConfig) -> RefineClient:
@@ -39,54 +45,104 @@ def build_gateway_client(config: RunConfig) -> GatewayClient:
     return HttpGatewayClient(base_url=config.gateway_url)
 
 
+def resolve_native_vocab(config: RunConfig, config_path: Path) -> Path | None:
+    """Resolve metrics.native_vocab against the config file's directory
+    (relative vocab paths live next to the config that names them)."""
+    if config.native_vocab is None:
+        return None
+    vocab = Path(config.native_vocab)
+    if not vocab.is_absolute():
+        vocab = Path(config_path).resolve().parent / vocab
+    return vocab
+
+
 def run_eval(config: RunConfig, config_path: Path, golden_path: Path, out_root: Path) -> Path:
-    """Run the walking-skeleton evaluation and write the run directory."""
+    """Run the evaluation sweep and write the run directory."""
     items = load_golden(golden_path)
     counter = TokenCounter(config.tiktoken_encoding)
+    native = build_native_counter(
+        config.native_flavor, resolve_native_vocab(config, config_path)
+    )
     sidecar = build_refine_client(config)
+    levels = config.effective_levels()
 
-    refine_results: list[tuple[GoldenItem, RefineResult]] = []
-    for item in items:
-        result = sidecar.refine(
-            item.prompt,
-            rewrite=config.sidecar_rewrite,
-            compress=config.sidecar_compress,
-            aggressiveness=config.aggressiveness,
+    level_blocks = []
+    for level in levels:
+        refine_results = _refine_all(sidecar, items, config, level)
+        level_blocks.append(
+            _build_level_block(
+                level=level,
+                refine_results=refine_results,
+                counter=counter,
+                native=native,
+            )
         )
-        refine_results.append((item, result))
 
     metrics = _build_metrics(
         config=config,
         config_path=config_path,
         golden_path=golden_path,
-        refine_results=refine_results,
+        refine_results=level_blocks[0]["_refine_meta"] if level_blocks else [],
+        level_blocks=level_blocks,
         counter=counter,
+        native_caliber=native.caliber_name,
+        levels=levels,
     )
     report_md = render_report_md(metrics)
     return write_run_dir(out_root, metrics, report_md)
 
 
-def _build_metrics(
+def _refine_all(
+    sidecar: RefineClient,
+    items: list[GoldenItem],
     config: RunConfig,
-    config_path: Path,
-    golden_path: Path,
-    refine_results: list[tuple[GoldenItem, RefineResult]],
-    counter: TokenCounter,
-) -> dict:
-    config_raw = Path(config_path).read_text(encoding="utf-8")
-    golden_raw_bytes = Path(golden_path).read_bytes()
+    level: float,
+) -> list[tuple[GoldenItem, RefineResult, float]]:
+    """Refine every item at one sweep level, timing each call."""
+    results: list[tuple[GoldenItem, RefineResult, float]] = []
+    for item in items:
+        started = time.perf_counter()
+        result = sidecar.refine(
+            item.prompt,
+            rewrite=config.sidecar_rewrite,
+            compress=config.sidecar_compress,
+            aggressiveness=level,
+        )
+        elapsed = time.perf_counter() - started
+        results.append((item, result, elapsed))
+    return results
 
+
+def _build_level_block(
+    level: float,
+    refine_results: list[tuple[GoldenItem, RefineResult, float]],
+    counter: TokenCounter,
+    native,
+) -> dict:
+    """One sweep level: per-item rows + aggregate (four metric slots)."""
     item_rows = []
-    for item, result in refine_results:
+    for item, result, latency in refine_results:
         original_tokens = counter.count(item.prompt)
         compressed_tokens = counter.count(result.refined_text)
+        native_original = native.count(item.prompt)
+        native_compressed = native.count(result.refined_text)
         item_rows.append(
             {
                 "id": item.id,
+                "load_type": item.load_type,
                 "original_tokens": original_tokens,
                 "compressed_tokens": compressed_tokens,
                 "kept_ratio": kept_ratio(original_tokens, compressed_tokens),
                 "compression_ratio": compression_ratio(original_tokens, compressed_tokens),
+                "native_original_tokens": native_original,
+                "native_compressed_tokens": native_compressed,
+                "native_kept_ratio": kept_ratio(native_original, native_compressed),
+                "native_compression_ratio": compression_ratio(
+                    native_original, native_compressed
+                ),
+                "fact_recall": round(fact_recall(item.prompt, result.refined_text), 4),
+                "token_f05": round(text_token_f05(item.prompt, result.refined_text), 4),
+                "latency_seconds": round(latency, 6),
                 "sidecar_original_tokens": result.original_tokens,
                 "sidecar_compressed_tokens": result.refined_tokens,
                 "compressed_text": result.refined_text,
@@ -95,7 +151,62 @@ def _build_metrics(
 
     total_original = sum(row["original_tokens"] for row in item_rows)
     total_compressed = sum(row["compressed_tokens"] for row in item_rows)
-    refine_models = sorted({result.refine_model for _, result in refine_results})
+    total_native_original = sum(row["native_original_tokens"] for row in item_rows)
+    total_native_compressed = sum(row["native_compressed_tokens"] for row in item_rows)
+    latencies = [row["latency_seconds"] for row in item_rows]
+
+    aggregate = {
+        "item_count": len(item_rows),
+        "total_original_tokens": total_original,
+        "total_compressed_tokens": total_compressed,
+        "corpus_kept_ratio": kept_ratio(total_original, total_compressed),
+        "corpus_compression_ratio": compression_ratio(total_original, total_compressed),
+        "mean_kept_ratio": _mean([r["kept_ratio"] for r in item_rows]),
+        "mean_compression_ratio": _mean([r["compression_ratio"] for r in item_rows]),
+        "total_native_original_tokens": total_native_original,
+        "total_native_compressed_tokens": total_native_compressed,
+        "corpus_native_kept_ratio": kept_ratio(total_native_original, total_native_compressed),
+        "corpus_native_compression_ratio": compression_ratio(
+            total_native_original, total_native_compressed
+        ),
+        "mean_fact_recall": _mean([r["fact_recall"] for r in item_rows]),
+        "mean_token_f05": _mean([r["token_f05"] for r in item_rows]),
+        "latency": {
+            "mean_seconds": _mean(latencies),
+            "p50_seconds": _nullable_round(percentile(latencies, 50)),
+            "p95_seconds": _nullable_round(percentile(latencies, 95)),
+        },
+        # Task-level quality (LLM judge on key_points) arrives with issue #7;
+        # the slot is structural so reports never silently lose the metric.
+        "task_quality": None,
+    }
+    return {
+        "aggressiveness": level,
+        "items": item_rows,
+        "aggregate": aggregate,
+        "_refine_meta": refine_results,
+    }
+
+
+def _build_metrics(
+    config: RunConfig,
+    config_path: Path,
+    golden_path: Path,
+    refine_results: list,
+    level_blocks: list[dict],
+    counter: TokenCounter,
+    native_caliber: str,
+    levels: list[float],
+) -> dict:
+    config_raw = Path(config_path).read_text(encoding="utf-8")
+    golden_raw_bytes = Path(golden_path).read_bytes()
+
+    refine_models = sorted(
+        {
+            result.refine_model
+            for _, result, _ in refine_results
+        }
+    )
     created_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     metrics = {
@@ -117,27 +228,24 @@ def _build_metrics(
         "golden": {
             "source_path": str(golden_path),
             "sha256": hashlib.sha256(golden_raw_bytes).hexdigest(),
-            "item_count": len(refine_results),
+            "item_count": len(level_blocks[0]["items"]) if level_blocks else 0,
         },
         "sidecar": {
             "mode": config.sidecar_mode,
             "refine_model": refine_models[0] if len(refine_models) == 1 else refine_models,
             "rewrite": config.sidecar_rewrite,
             "compress": config.sidecar_compress,
-            "aggressiveness": config.aggressiveness,
+            # Single level: the exact aggressiveness. Sweep: the levels live
+            # in metrics.levels — no misleading "primary" here.
+            "aggressiveness": levels[0] if len(levels) == 1 else None,
         },
         "metrics": {
             "tiktoken_encoding": counter.encoding_name,
-            "items": item_rows,
-            "aggregate": {
-                "item_count": len(item_rows),
-                "total_original_tokens": total_original,
-                "total_compressed_tokens": total_compressed,
-                "corpus_kept_ratio": kept_ratio(total_original, total_compressed),
-                "corpus_compression_ratio": compression_ratio(total_original, total_compressed),
-                "mean_kept_ratio": _mean([r["kept_ratio"] for r in item_rows]),
-                "mean_compression_ratio": _mean([r["compression_ratio"] for r in item_rows]),
-            },
+            "native_caliber": native_caliber,
+            "levels": [
+                {key: block[key] for key in ("aggressiveness", "items", "aggregate")}
+                for block in level_blocks
+            ],
         },
     }
     return metrics
@@ -159,6 +267,10 @@ def _run_id(config: RunConfig, config_raw: str, golden_bytes: bytes, created_at:
 
 def _mean(values: list[float]) -> float:
     return round(sum(values) / len(values), 4) if values else 0.0
+
+
+def _nullable_round(value: float | None) -> float | None:
+    return None if value is None else round(value, 6)
 
 
 def _tiktoken_version() -> str:

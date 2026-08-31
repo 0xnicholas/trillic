@@ -46,8 +46,14 @@ uv run trillic eval run \
 说明:
 
 - **评测骨架**(`trillic eval run`,issue #2):golden jsonl + TOML 配置进 →
-  不可变 run 目录(`metrics.json` + `report.md`)出;压缩率按 tiktoken
-  口径(`cl100k_base`,与 docs/evaluation.md 对照数字同口径)。
+  不可变 run 目录(`metrics.json` + `report.md`)出。
+- **指标全集 + 扫档**(issue #6):压缩率双口径(tiktoken 计费 + 模型原生
+  token 计数器参数化:`word` / `wordpiece` / `sentencepiece` 三种 flavor,
+  换基底只改配置 `[metrics]` 不改代码);fact recall 与 token F0.5 为纯函数,
+  口径与运行时 guardrail 同源(`_FACT_PATTERN` 逐字复用;F0.5 同公式、
+  恒等对齐替代 embedding,harness 不带模型运行时);`[run] levels` 扫档
+  0.1–0.5 每档一节;sidecar 调用逐条计时,p50/p95 按档入报告;任务级
+  质量为结构占位(issue #7 填充)。假桩下全链路可演示。
 - **golden 工具族**(`trillic golden *`,issue #3):schema v2(含 load_type
   与 source 溯源)校验、LongBench 切分/许可 manifest、种子化 RAG 起草。
   切分纪律:内容寻址半分(sha1 排序,前 ceil(n/2) 为 eval 半),golden
@@ -88,5 +94,6 @@ uv run trillic eval run \
 ## 状态
 
 阶段 1(评测基线)进行中:评测 harness walking skeleton(#2)、Golden
-骨架 + RAG pilot(#3)、system prompt pilot(#4)、多轮对话 pilot(#5)已
-落地;指标全集与任务级质量见后续子票。
+骨架 + RAG pilot(#3)、system prompt pilot(#4)、多轮对话 pilot(#5)、
+指标全集 + 扫档 + 延迟(#6)已落地;任务级质量 + judge + bootstrap、
+真链路冒烟与双 checkpoint 基线见后续子票。

@@ -21,15 +21,22 @@ class RunConfig:
     seed: int = 0
     tiktoken_encoding: str = "cl100k_base"
     aggressiveness: float = 0.2
+    levels: tuple[float, ...] = ()  # empty = sweep [aggressiveness]
     sidecar_mode: str = "stub"
     sidecar_url: str = "http://127.0.0.1:9797"
     sidecar_rewrite: bool = False
     sidecar_compress: bool = True
     gateway_mode: str = "stub"
     gateway_url: str = "http://127.0.0.1:3005"
+    native_flavor: str = "word"
+    native_vocab: str | None = None
 
     def snapshot(self) -> dict:
         return asdict(self)
+
+    def effective_levels(self) -> list[float]:
+        """Sweep levels: explicit `run.levels`, else [aggressiveness]."""
+        return list(self.levels) if self.levels else [self.aggressiveness]
 
 
 # Single source of truth for the config schema: section -> {toml key ->
@@ -37,7 +44,7 @@ class RunConfig:
 # (section, key) -> field lookup can never drift or KeyError.
 _SECTION_FIELDS: dict[str, dict[str, str]] = {
     "harness": {"seed": "seed", "tiktoken_encoding": "tiktoken_encoding"},
-    "run": {"aggressiveness": "aggressiveness"},
+    "run": {"aggressiveness": "aggressiveness", "levels": "levels"},
     "sidecar": {
         "mode": "sidecar_mode",
         "url": "sidecar_url",
@@ -45,7 +52,10 @@ _SECTION_FIELDS: dict[str, dict[str, str]] = {
         "compress": "sidecar_compress",
     },
     "gateway": {"mode": "gateway_mode", "url": "gateway_url"},
+    "metrics": {"native_flavor": "native_flavor", "native_vocab": "native_vocab"},
 }
+_NATIVE_FLAVORS = ("word", "wordpiece", "sentencepiece")
+_SWEEP_MAX = 0.5  # phase-1 sweep scope (docs/evaluation.md: 0.1-0.5)
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
@@ -75,6 +85,14 @@ def load_config(path: Path) -> RunConfig:
             if key not in fields:
                 raise ConfigError(f"{path}: unknown key {key!r} in [{section}]")
             values[fields[key]] = value
+        if (
+            section == "run"
+            and "levels" in section_data
+            and not section_data["levels"]
+        ):
+            raise ConfigError(
+                f"{path}: run.levels must list at least one aggressiveness level"
+            )
 
     config = RunConfig(**values)
     _validate(config, path)
@@ -90,6 +108,8 @@ def _validate(config: RunConfig, path: Path) -> None:
         raise ConfigError(
             f"{path}: run.aggressiveness must be within [0, 1], got {config.aggressiveness}"
         )
+    _validate_levels(config, path)
+    _validate_native_tokenizer(config, path)
     if config.sidecar_mode not in ("stub", "http"):
         raise ConfigError(
             f"{path}: sidecar.mode must be 'stub' or 'http', got {config.sidecar_mode!r}"
@@ -102,4 +122,44 @@ def _validate(config: RunConfig, path: Path) -> None:
         raise ConfigError(
             f"{path}: sidecar.rewrite and sidecar.compress cannot both be false "
             "(the refine endpoint rejects that request)"
+        )
+
+
+def _validate_levels(config: RunConfig, path: Path) -> None:
+    levels = config.levels
+    if not levels:
+        return
+    for level in levels:
+        if not isinstance(level, (int, float)) or isinstance(level, bool):
+            raise ConfigError(
+                f"{path}: run.levels must be numeric, got {level!r}"
+            )
+        if not 0.0 < level <= _SWEEP_MAX:
+            raise ConfigError(
+                f"{path}: run.levels entries must be within (0, {_SWEEP_MAX}] "
+                f"(phase-1 sweep scope), got {level!r}"
+            )
+    if len(set(levels)) != len(levels):
+        raise ConfigError(
+            f"{path}: run.levels entries must be unique, got {list(levels)}"
+        )
+
+
+def _validate_native_tokenizer(config: RunConfig, path: Path) -> None:
+    if config.native_flavor not in _NATIVE_FLAVORS:
+        raise ConfigError(
+            f"{path}: metrics.native_flavor must be one of {list(_NATIVE_FLAVORS)}, "
+            f"got {config.native_flavor!r}"
+        )
+    if config.native_flavor == "word":
+        if config.native_vocab is not None:
+            raise ConfigError(
+                f"{path}: metrics.native_vocab is not used by the 'word' flavor "
+                "— drop it"
+            )
+        return
+    if not config.native_vocab or not config.native_vocab.strip():
+        raise ConfigError(
+            f"{path}: metrics.native_flavor {config.native_flavor!r} "
+            "requires a vocab (metrics.native_vocab)"
         )
