@@ -249,15 +249,15 @@
       ]
     },
     "review": {
-      "status": "pending",
-      "reviewer": null,
+      "status": "approved",
+      "reviewer": "nicholas (delegated: agent-executed review, 2026-08-31)",
       "checked": [
         "each system prompt reads as production-style and self-consistent",
         "each user message actually activates the constraints",
         "key_points are behavioral constraints (format/refusal/tone), not document facts",
         "seeded values embedded in key_points match the prompt"
       ],
-      "notes": ""
+      "notes": "All four checklist items verified: read-through of all 10 entries (production-style, self-consistent); each user message pushes against >=2 rules; key_points all behavioral (format/refusal/tone) with seeded parameters cross-checked verbatim against prompts (TK-90342, 999, 150 words, 12 lines, SDK 3.1.0, hint level 2, escalate-after-2, under-100-words)."
     }
   }
 }
