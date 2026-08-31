@@ -1,0 +1,28 @@
+# Pilot baseline: all three 10-entry pilots through the REAL sidecar
+# (mBERT-base) and the REAL gateway. Default level (0.2) per issue #8.
+#
+# Gateway spend: ~30 items x (2 answers + 2 judges) ~ 10^2 calls.
+# Judge note: anthropic/claude-sonnet-4-5 has a placeholder upstream key in
+# this environment (config/default.yaml), so the judge pins kimi/kimi-k2 —
+# a different vendor from the answer model, which also avoids self-preference.
+#
+# Rerunning after an interruption is safe: the crash journal under
+# runs/.ledger/ replays completed items automatically (no re-billing).
+
+name = "pilot30"
+
+[sidecar]
+mode = "http"
+url = "http://127.0.0.1:9797"
+
+[gateway]
+mode = "http"
+url = "http://127.0.0.1:3005"
+
+[quality]
+answer_model = "deepseek/deepseek-v4-pro"
+judge_model = "kimi/kimi-k2"
+
+[metrics]
+native_flavor = "wordpiece"
+native_vocab = "../assets/tokenizers/bert-base-multilingual-cased-vocab.txt"

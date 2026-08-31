@@ -167,3 +167,43 @@ class TestStubGatewayClient:
     def test_malformed_judge_envelope_propagates_judge_error(self):
         with pytest.raises(JudgeError):
             StubGatewayClient().chat(model="m", prompt="TRILLIC-JUDGE/1 not json\nrest")
+
+
+class TestGatewayRetry:
+    def test_timeout_then_success_retries_once(self):
+        """A transient stall gets ONE bounded retry (observed twice on the
+        dev gateway during the issue-8 pilot); the second attempt wins."""
+        calls = {"n": 0}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise httpx.ReadTimeout("transient stall")
+            return httpx.Response(200, json=COMPLETION_RESPONSE)
+
+        client = make_client(handler, service_key="k")
+        result = client.chat(model="m", prompt="p")
+        assert calls["n"] == 2
+        assert result.content == "model answer"
+
+    def test_persistent_timeout_exhausts_retries(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ReadTimeout("stalled")
+
+        client = make_client(handler, service_key="k")
+        with pytest.raises(GatewayError, match="unreachable"):
+            client.chat(model="m", prompt="p")
+
+    def test_http_error_status_is_not_retried(self):
+        """4xx/5xx responses are deliberate gateway answers, not stalls —
+        no retry, fail fast with the body."""
+        calls = {"n": 0}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls["n"] += 1
+            return httpx.Response(402, json={"error": {"message": "no funds"}})
+
+        client = make_client(handler, service_key="k")
+        with pytest.raises(GatewayError, match="no funds"):
+            client.chat(model="m", prompt="p")
+        assert calls["n"] == 1

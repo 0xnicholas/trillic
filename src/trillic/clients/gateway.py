@@ -13,6 +13,7 @@ variable (issue #1: credentials never land in config files or the repo).
 """
 
 import os
+import time
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -52,12 +53,19 @@ class HttpGatewayClient:
         service_key: str | None = None,
         timeout_seconds: float = 120.0,
         transport: httpx.BaseTransport | None = None,
+        max_retries: int = 1,
     ) -> None:
         self._client = httpx.Client(
             base_url=base_url.rstrip("/"),
             timeout=timeout_seconds,
             transport=transport,
         )
+        # Paid calls through a dev gateway see transient stalls (observed
+        # twice during the issue-8 pilot). A timed-out request MAY have
+        # been billed server-side; exactly-once is impossible client-side,
+        # so one bounded retry is the pragmatic contract (the run journal
+        # keeps pair-granularity accounting honest regardless).
+        self._max_retries = max(0, max_retries)
         self._service_key = service_key if service_key is not None else os.environ.get(SERVICE_KEY_ENV)
 
     def chat(self, model: str, prompt: str) -> ChatResult:
@@ -72,12 +80,19 @@ class HttpGatewayClient:
             "stream": False,
         }
         headers = {"Authorization": f"Bearer {self._service_key}", "X-TC-Refine": "false"}
-        try:
-            response = self._client.post(
-                "/v1/chat/completions", json=payload, headers=headers
-            )
-        except httpx.HTTPError as e:
-            raise GatewayError(f"gateway unreachable: {e}") from e
+        last_error: Exception | None = None
+        for attempt in range(self._max_retries + 1):
+            try:
+                response = self._client.post(
+                    "/v1/chat/completions", json=payload, headers=headers
+                )
+                break
+            except httpx.HTTPError as e:
+                last_error = e
+                if attempt < self._max_retries:
+                    time.sleep(2 * (attempt + 1))
+        else:
+            raise GatewayError(f"gateway unreachable: {last_error}") from last_error
         if response.status_code < 200 or response.status_code >= 300:
             raise GatewayError(
                 f"gateway returned {response.status_code}: {response.text[:500]}"
