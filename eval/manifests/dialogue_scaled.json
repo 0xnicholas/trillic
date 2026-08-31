@@ -1,0 +1,326 @@
+{
+  "schema_version": 1,
+  "method": "multi-turn conversation templates (src/trillic/dialogue.py — five families ported from 0xnicholas/tokencamp compression/eval/conversation_gen.py, same author, five new) + seeded slot synthesis; prompt = user/assistant history + final user recall message, serialized as 'role: content' lines; key_points are history facts (names/dates/prior decisions) that quote the history verbatim so survival is judgeable after compression; per-family DISJOINT eval/train integer seed ranges in dialogue_families.toml are the split authority — golden draws from eval seeds only; the phase-2 training side will reuse the same templates and machinery with train seeds (shared code, never shared seeds)",
+  "entry_id_rule": "dlg-<family>-s<seed>",
+  "rng": "random.Random(int.from_bytes(sha256('<family>:<seed>')[:8]))",
+  "content_addressing": "sha1(prompt)",
+  "families": [
+    {
+      "name": "support_ticket",
+      "description": "Webhook delivery failure: root cause (egress IP rotation), allowlist fix, retry policy, impact window",
+      "fact_types": [
+        "name",
+        "date",
+        "decision"
+      ],
+      "license": "original (ported from 0xnicholas/tokencamp compression/eval/conversation_gen.py — same author)",
+      "train_use": true,
+      "eval_seed_range": [
+        101,
+        110
+      ],
+      "train_seed_range": [
+        901,
+        910
+      ],
+      "note": "Ported scenario 1; optional deeper round (signing-secret rotation) spliced by seeded slot."
+    },
+    {
+      "name": "pair_programming",
+      "description": "Flaky idempotency test: check-then-act race diagnosis, ON CONFLICT fix, prod dupes cleanup, double-captured amount",
+      "fact_types": [
+        "name",
+        "date",
+        "decision"
+      ],
+      "license": "original (ported from 0xnicholas/tokencamp compression/eval/conversation_gen.py — same author)",
+      "train_use": true,
+      "eval_seed_range": [
+        101,
+        110
+      ],
+      "train_seed_range": [
+        901,
+        910
+      ],
+      "note": "Ported scenario 2; carries code blocks (template braces escaped)."
+    },
+    {
+      "name": "requirements_discussion",
+      "description": "PRD alignment: v1 boundary (admins/UI only), async jobs, retention, rate-limit cap, no-partial-artifacts invariant",
+      "fact_types": [
+        "name",
+        "decision"
+      ],
+      "license": "original (ported from 0xnicholas/tokencamp compression/eval/conversation_gen.py — same author)",
+      "train_use": true,
+      "eval_seed_range": [
+        101,
+        110
+      ],
+      "train_seed_range": [
+        901,
+        910
+      ],
+      "note": "Ported scenario 3; decision-dense with numbers (queue cap, retention, effort)."
+    },
+    {
+      "name": "data_pipeline",
+      "description": "Overnight metric drop: inner-join row loss diagnosis, privacy ruling, LEFT JOIN fix, 12-day restatement",
+      "fact_types": [
+        "name",
+        "decision"
+      ],
+      "license": "original (ported from 0xnicholas/tokencamp compression/eval/conversation_gen.py — same author)",
+      "train_use": true,
+      "eval_seed_range": [
+        101,
+        110
+      ],
+      "train_seed_range": [
+        901,
+        910
+      ],
+      "note": "Ported scenario 4; SQL join semantics carry the decisions."
+    },
+    {
+      "name": "devops_incident",
+      "description": "SEV incident: retry-storm root cause, rollback-first mitigation, fix-forward plan with owners and timeline",
+      "fact_types": [
+        "name",
+        "date",
+        "decision"
+      ],
+      "license": "original (ported from 0xnicholas/tokencamp compression/eval/conversation_gen.py — same author)",
+      "train_use": true,
+      "eval_seed_range": [
+        101,
+        110
+      ],
+      "train_seed_range": [
+        901,
+        910
+      ],
+      "note": "Ported scenario 5; timestamps and revision ids are seeded."
+    },
+    {
+      "name": "vendor_procurement",
+      "description": "Contract renewal negotiation: discount-for-term target, notice/cap clauses, conditional SOC 2, DPA routing, fallback",
+      "fact_types": [
+        "name",
+        "date",
+        "decision"
+      ],
+      "license": "original (authored in this repo, no third-party content)",
+      "train_use": true,
+      "eval_seed_range": [
+        101,
+        110
+      ],
+      "train_seed_range": [
+        901,
+        910
+      ],
+      "note": "New family: clause-level decisions with dates, percentages, and named owner."
+    },
+    {
+      "name": "onboarding_rollout",
+      "description": "Customer migration: freeze window constraint, phased-vs-big-bang decision, pilot and cutover dates, rollback window",
+      "fact_types": [
+        "name",
+        "date",
+        "decision"
+      ],
+      "license": "original (authored in this repo, no third-party content)",
+      "train_use": true,
+      "eval_seed_range": [
+        101,
+        110
+      ],
+      "train_seed_range": [
+        901,
+        910
+      ],
+      "note": "New family: date-dense planning dialogue; recall task mirrors steering-committee briefing."
+    },
+    {
+      "name": "bug_triage",
+      "description": "Weekly triage: severity call with rationale, ownership, milestone, backport decision, regression-test commitment",
+      "fact_types": [
+        "name",
+        "date",
+        "decision"
+      ],
+      "license": "original (authored in this repo, no third-party content)",
+      "train_use": true,
+      "eval_seed_range": [
+        101,
+        110
+      ],
+      "train_seed_range": [
+        901,
+        910
+      ],
+      "note": "New family: names + versions + dates; severity reasoning must survive."
+    },
+    {
+      "name": "access_review",
+      "description": "Access grant review: scope/conditions/expiry decision, bastion-only rule, approver, standing-access re-review date",
+      "fact_types": [
+        "name",
+        "date",
+        "decision"
+      ],
+      "license": "original (authored in this repo, no third-party content)",
+      "train_use": true,
+      "eval_seed_range": [
+        101,
+        110
+      ],
+      "train_seed_range": [
+        901,
+        910
+      ],
+      "note": "New family: compliance-grade precision — every grant parameter is a key fact."
+    },
+    {
+      "name": "release_planning",
+      "description": "Release cut: locked ship date, feature cut to next version, migration owner/time, canary plan, code freeze",
+      "fact_types": [
+        "name",
+        "date",
+        "decision"
+      ],
+      "license": "original (authored in this repo, no third-party content)",
+      "train_use": true,
+      "eval_seed_range": [
+        101,
+        110
+      ],
+      "train_seed_range": [
+        901,
+        910
+      ],
+      "note": "New family: the ship-review recap is the recall task."
+    }
+  ],
+  "pilot": {
+    "file": "dialogue_scaled.jsonl",
+    "entries": 40,
+    "ids": [
+      "dlg-support_ticket-s102",
+      "dlg-support_ticket-s103",
+      "dlg-support_ticket-s104",
+      "dlg-support_ticket-s105",
+      "dlg-pair_programming-s102",
+      "dlg-pair_programming-s103",
+      "dlg-pair_programming-s104",
+      "dlg-pair_programming-s105",
+      "dlg-requirements_discussion-s102",
+      "dlg-requirements_discussion-s103",
+      "dlg-requirements_discussion-s104",
+      "dlg-requirements_discussion-s105",
+      "dlg-data_pipeline-s102",
+      "dlg-data_pipeline-s103",
+      "dlg-data_pipeline-s104",
+      "dlg-data_pipeline-s105",
+      "dlg-devops_incident-s102",
+      "dlg-devops_incident-s103",
+      "dlg-devops_incident-s104",
+      "dlg-devops_incident-s105",
+      "dlg-vendor_procurement-s102",
+      "dlg-vendor_procurement-s103",
+      "dlg-vendor_procurement-s104",
+      "dlg-vendor_procurement-s105",
+      "dlg-onboarding_rollout-s102",
+      "dlg-onboarding_rollout-s103",
+      "dlg-onboarding_rollout-s104",
+      "dlg-onboarding_rollout-s105",
+      "dlg-bug_triage-s102",
+      "dlg-bug_triage-s103",
+      "dlg-bug_triage-s104",
+      "dlg-bug_triage-s105",
+      "dlg-access_review-s102",
+      "dlg-access_review-s103",
+      "dlg-access_review-s104",
+      "dlg-access_review-s105",
+      "dlg-release_planning-s102",
+      "dlg-release_planning-s103",
+      "dlg-release_planning-s104",
+      "dlg-release_planning-s105"
+    ],
+    "seed_plan": {
+      "support_ticket": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "pair_programming": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "requirements_discussion": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "data_pipeline": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "devops_incident": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "vendor_procurement": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "onboarding_rollout": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "bug_triage": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "access_review": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "release_planning": [
+        102,
+        103,
+        104,
+        105
+      ]
+    },
+    "review": {
+      "status": "pending",
+      "reviewer": null,
+      "checked": [
+        "each conversation reads as a realistic multi-turn exchange",
+        "the final user message asks the assistant to recall history facts",
+        "key_points are history facts (names/dates/prior decisions), not constraints or final-message-only claims",
+        "seeded values embedded in key_points quote the history verbatim"
+      ],
+      "notes": ""
+    }
+  }
+}

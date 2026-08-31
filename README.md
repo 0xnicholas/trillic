@@ -97,6 +97,14 @@ uv run trillic eval run \
   仅当重压缩逐字一致才复用,漂移即诚实重计费),报告与 metrics 记
   fresh/reused 计数与恢复来源;`eval sizing --run <dir>` 从已跑 run 出
   judge 方差、效应量(Cohen's d)与单侧 z 检验反推的每类定容 n。
+- **pilot 基线与定容**(issue #8):真链路(sidecar mBERT-base + 真网关)
+  30 条 pilot 全量跑通;任务级质量 delta −0.0767,95% CI [−0.1722,
+  +0.0044](基线摘录与台账见 `docs/baselines/`);定容决策 **50/类**
+  (合并分析为主判据,依据与局限在 sizing-decision);golden 扩产至
+  149 条(RAG 49 + sys 50 + dlg 50,合并去重校验通过,生成类 manifest
+  冻结含漂移拒);中断恢复在两次真实网关停摆下验证(36 fresh /
+  84 reused)。RAG 缺口 1 条:短答案子集(qasper/hotpotqa)机械派生
+  要点质量不足、富答案 eval 半已耗尽,补齐需人工修剪(后续票)。
 - **假桩注入**:sidecar(POST /refine)与网关客户端均为可注入协议,
   配置 `mode = "stub" | "http"` 切换;全部测试零网络。
 - **离线 tiktoken**:测试通过仓内缓存(`eval/assets/tiktoken_cache/`)
@@ -108,6 +116,5 @@ uv run trillic eval run \
 
 ## 状态
 
-阶段 1(评测基线)进行中:#2–#7 已落地;#8 零花费前置(多 golden 拼合、
-中断恢复台账、定容工具)就绪,真链路冒烟待 owner 注入网关密钥后执行;
-#9 双 checkpoint 收官在后。
+阶段 1(评测基线)进行中:#2–#8 已落地(真链路冒烟、pilot 基线、定容
+50/类、golden 149 条);剩 #9 双 checkpoint 全量基线 + 冻结收官。

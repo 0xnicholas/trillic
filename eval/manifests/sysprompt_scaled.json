@@ -1,0 +1,323 @@
+{
+  "schema_version": 1,
+  "method": "handwritten scenario-family templates (src/trillic/sysprompt.py) + seeded slot synthesis; per-family DISJOINT eval/train integer seed ranges in sysprompt_families.toml are the split authority — golden draws from eval seeds only; the phase-2 training side will reuse the same templates and machinery with train seeds (shared code, never shared seeds)",
+  "entry_id_rule": "sys-<family>-s<seed>",
+  "rng": "random.Random(int.from_bytes(sha256('<family>:<seed>')[:8]))",
+  "content_addressing": "sha1(prompt)",
+  "families": [
+    {
+      "name": "support_logistics",
+      "description": "Tier-1 parcel-tracking support: refund refusal, escalation threshold, ticket-quote format, word cap",
+      "constraint_types": [
+        "refusal",
+        "format"
+      ],
+      "license": "original (authored in this repo, no third-party content)",
+      "train_use": true,
+      "eval_seed_range": [
+        101,
+        110
+      ],
+      "train_seed_range": [
+        901,
+        910
+      ],
+      "note": "Archetype: customer tries to lure a refund promise for a lost parcel."
+    },
+    {
+      "name": "finance_analyst",
+      "description": "Equity-research desk assistant: three-section output format, personalized-advice refusal, no own estimates",
+      "constraint_types": [
+        "format",
+        "refusal"
+      ],
+      "license": "original (authored in this repo, no third-party content)",
+      "train_use": true,
+      "eval_seed_range": [
+        101,
+        110
+      ],
+      "train_seed_range": [
+        901,
+        910
+      ],
+      "note": "Archetype: retail-style 'should I move my savings in' ask against a professional-materials assistant."
+    },
+    {
+      "name": "medical_triage",
+      "description": "Consumer health-app triage: no diagnosis/medication, red-flag emergency redirect, urgency-level format, calm tone",
+      "constraint_types": [
+        "refusal",
+        "format",
+        "tone"
+      ],
+      "license": "original (authored in this repo, no third-party content)",
+      "train_use": true,
+      "eval_seed_range": [
+        101,
+        110
+      ],
+      "train_seed_range": [
+        901,
+        910
+      ],
+      "note": "Archetype: chest-pain description that must trigger the emergency path, not an antacid suggestion."
+    },
+    {
+      "name": "code_reviewer",
+      "description": "PR review assistant: severity-ordered findings format, max-N-line fix snippets, whole-file-rewrite refusal",
+      "constraint_types": [
+        "format",
+        "refusal"
+      ],
+      "license": "original (authored in this repo, no third-party content)",
+      "train_use": true,
+      "eval_seed_range": [
+        101,
+        110
+      ],
+      "train_seed_range": [
+        901,
+        910
+      ],
+      "note": "Archetype: 'just rewrite the file however you like' must be declined."
+    },
+    {
+      "name": "sales_outbound",
+      "description": "SDR email drafting: word cap, verbatim opt-out line, pricing refusal, no competitor disparagement",
+      "constraint_types": [
+        "format",
+        "refusal",
+        "tone"
+      ],
+      "license": "original (authored in this repo, no third-party content)",
+      "train_use": true,
+      "eval_seed_range": [
+        101,
+        110
+      ],
+      "train_seed_range": [
+        901,
+        910
+      ],
+      "note": "Archetype: rep asks for discount pressure + competitor mudslinging."
+    },
+    {
+      "name": "legal_contract",
+      "description": "Contract-review assistant: clause-ID-only citations, Findings/Gaps format, legal-advice refusal line",
+      "constraint_types": [
+        "refusal",
+        "format"
+      ],
+      "license": "original (authored in this repo, no third-party content)",
+      "train_use": true,
+      "eval_seed_range": [
+        101,
+        110
+      ],
+      "train_seed_range": [
+        901,
+        910
+      ],
+      "note": "Archetype: 'my lawyer is on vacation, can I sign' must hit the not-legal-advice line."
+    },
+    {
+      "name": "socratic_tutor",
+      "description": "Math tutor: never reveal/confirm answers, capped hint levels, no 'wrong' wording, one guiding question per reply",
+      "constraint_types": [
+        "refusal",
+        "tone",
+        "format"
+      ],
+      "license": "original (authored in this repo, no third-party content)",
+      "train_use": true,
+      "eval_seed_range": [
+        101,
+        110
+      ],
+      "train_seed_range": [
+        901,
+        910
+      ],
+      "note": "Archetype: student has the back-of-book answer and asks for confirmation."
+    },
+    {
+      "name": "api_support",
+      "description": "Versioned API developer support: code-first answer format, SDK-version pinning, no unreleased features, no invented endpoints",
+      "constraint_types": [
+        "format",
+        "refusal"
+      ],
+      "license": "original (authored in this repo, no third-party content)",
+      "train_use": true,
+      "eval_seed_range": [
+        101,
+        110
+      ],
+      "train_seed_range": [
+        901,
+        910
+      ],
+      "note": "Archetype: asks a valid question plus a preview-only feature; the second half must be refused."
+    },
+    {
+      "name": "hr_policy",
+      "description": "Internal HR policy Q&A: policy-section-ID grounding, one-sentence-then-basis format, no case speculation, neutral tone",
+      "constraint_types": [
+        "format",
+        "refusal",
+        "tone"
+      ],
+      "license": "original (authored in this repo, no third-party content)",
+      "train_use": true,
+      "eval_seed_range": [
+        101,
+        110
+      ],
+      "train_seed_range": [
+        901,
+        910
+      ],
+      "note": "Archetype: asks what the manager 'will do' about a named teammate."
+    },
+    {
+      "name": "incident_commander",
+      "description": "Incident status updates: strict five-line template, confirmed-ETA-only rule, no blame language, no premature root cause",
+      "constraint_types": [
+        "format",
+        "refusal",
+        "tone"
+      ],
+      "license": "original (authored in this repo, no third-party content)",
+      "train_use": true,
+      "eval_seed_range": [
+        101,
+        110
+      ],
+      "train_seed_range": [
+        901,
+        910
+      ],
+      "note": "Archetype: draft request names the person at fault and an unconfirmed ETA."
+    }
+  ],
+  "pilot": {
+    "file": "sysprompt_scaled.jsonl",
+    "entries": 40,
+    "ids": [
+      "sys-support_logistics-s102",
+      "sys-support_logistics-s103",
+      "sys-support_logistics-s104",
+      "sys-support_logistics-s105",
+      "sys-finance_analyst-s102",
+      "sys-finance_analyst-s103",
+      "sys-finance_analyst-s104",
+      "sys-finance_analyst-s105",
+      "sys-medical_triage-s102",
+      "sys-medical_triage-s103",
+      "sys-medical_triage-s104",
+      "sys-medical_triage-s105",
+      "sys-code_reviewer-s102",
+      "sys-code_reviewer-s103",
+      "sys-code_reviewer-s104",
+      "sys-code_reviewer-s105",
+      "sys-sales_outbound-s102",
+      "sys-sales_outbound-s103",
+      "sys-sales_outbound-s104",
+      "sys-sales_outbound-s105",
+      "sys-legal_contract-s102",
+      "sys-legal_contract-s103",
+      "sys-legal_contract-s104",
+      "sys-legal_contract-s105",
+      "sys-socratic_tutor-s102",
+      "sys-socratic_tutor-s103",
+      "sys-socratic_tutor-s104",
+      "sys-socratic_tutor-s105",
+      "sys-api_support-s102",
+      "sys-api_support-s103",
+      "sys-api_support-s104",
+      "sys-api_support-s105",
+      "sys-hr_policy-s102",
+      "sys-hr_policy-s103",
+      "sys-hr_policy-s104",
+      "sys-hr_policy-s105",
+      "sys-incident_commander-s102",
+      "sys-incident_commander-s103",
+      "sys-incident_commander-s104",
+      "sys-incident_commander-s105"
+    ],
+    "seed_plan": {
+      "support_logistics": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "finance_analyst": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "medical_triage": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "code_reviewer": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "sales_outbound": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "legal_contract": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "socratic_tutor": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "api_support": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "hr_policy": [
+        102,
+        103,
+        104,
+        105
+      ],
+      "incident_commander": [
+        102,
+        103,
+        104,
+        105
+      ]
+    },
+    "review": {
+      "status": "pending",
+      "reviewer": null,
+      "checked": [
+        "each system prompt reads as production-style and self-consistent",
+        "each user message actually activates the constraints",
+        "key_points are behavioral constraints (format/refusal/tone), not document facts",
+        "seeded values embedded in key_points match the prompt"
+      ],
+      "notes": ""
+    }
+  }
+}
