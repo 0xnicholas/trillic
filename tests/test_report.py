@@ -157,3 +157,16 @@ class TestRenderReport:
         report = render_report_md(metrics)
         assert "disabled (quality.task_quality = false)" in report
         assert "### Task quality" not in report
+
+    def test_report_calls_out_gateway_model_aliasing(self):
+        metrics = sample_metrics()
+        metrics["task_quality"]["served_answer_models"] = ["answer-2026-08-01"]
+        metrics["task_quality"]["served_judge_models"] = ["stub-judge"]
+        report = render_report_md(metrics)
+        assert "gateway aliasing" in report
+        assert "answer served as answer-2026-08-01" in report
+        assert "judge served as" not in report  # judge not aliased
+
+    def test_report_silent_when_served_matches_pins(self):
+        report = render_report_md(sample_metrics())
+        assert "aliasing" not in report

@@ -31,7 +31,7 @@ from trillic.config import RunConfig
 from trillic.golden import GoldenItem, load_golden
 from trillic.judge import RUBRIC_VERSION, rubric_sha256
 from trillic.native_tokens import NativeCounter, build_native_counter
-from trillic.quality import fact_recall, percentile, text_token_f05
+from trillic.quality import fact_recall, percentile, rounded_mean, text_token_f05
 from trillic.report import render_report_md, write_run_dir
 from trillic.task_quality import TaskQualityLoop
 from trillic.tokens import TokenCounter, compression_ratio, kept_ratio
@@ -116,6 +116,7 @@ def run_eval(config: RunConfig, config_path: Path, golden_path: Path, out_root: 
         counter=counter,
         native_caliber=native.caliber_name,
         levels=levels,
+        served_models=task_loop.served_models() if task_loop is not None else None,
     )
     report_md = render_report_md(metrics)
     return write_run_dir(out_root, metrics, report_md)
@@ -196,18 +197,18 @@ def _build_level_block(
         "total_compressed_tokens": total_compressed,
         "corpus_kept_ratio": kept_ratio(total_original, total_compressed),
         "corpus_compression_ratio": compression_ratio(total_original, total_compressed),
-        "mean_kept_ratio": _mean([r["kept_ratio"] for r in item_rows]),
-        "mean_compression_ratio": _mean([r["compression_ratio"] for r in item_rows]),
+        "mean_kept_ratio": rounded_mean([r["kept_ratio"] for r in item_rows]),
+        "mean_compression_ratio": rounded_mean([r["compression_ratio"] for r in item_rows]),
         "total_native_original_tokens": total_native_original,
         "total_native_compressed_tokens": total_native_compressed,
         "corpus_native_kept_ratio": kept_ratio(total_native_original, total_native_compressed),
         "corpus_native_compression_ratio": compression_ratio(
             total_native_original, total_native_compressed
         ),
-        "mean_fact_recall": _mean([r["fact_recall"] for r in item_rows]),
-        "mean_token_f05": _mean([r["token_f05"] for r in item_rows]),
+        "mean_fact_recall": rounded_mean([r["fact_recall"] for r in item_rows]),
+        "mean_token_f05": rounded_mean([r["token_f05"] for r in item_rows]),
         "latency": {
-            "mean_seconds": _mean(latencies),
+            "mean_seconds": rounded_mean(latencies),
             "p50_seconds": _nullable_round(percentile(latencies, 50)),
             "p95_seconds": _nullable_round(percentile(latencies, 95)),
         },
@@ -232,6 +233,7 @@ def _build_metrics(
     counter: TokenCounter,
     native_caliber: str,
     levels: list[float],
+    served_models: dict[str, list[str]] | None = None,
 ) -> dict:
     config_raw = Path(config_path).read_text(encoding="utf-8")
     golden_raw_bytes = Path(golden_path).read_bytes()
@@ -274,7 +276,7 @@ def _build_metrics(
             # in metrics.levels — no misleading "primary" here.
             "aggressiveness": levels[0] if len(levels) == 1 else None,
         },
-        "task_quality": _task_quality_meta(config),
+        "task_quality": _task_quality_meta(config, served_models),
         "metrics": {
             "tiktoken_encoding": counter.encoding_name,
             "native_caliber": native_caliber,
@@ -284,13 +286,17 @@ def _build_metrics(
     return metrics
 
 
-def _task_quality_meta(config: RunConfig) -> dict:
+def _task_quality_meta(
+    config: RunConfig, served_models: dict[str, list[str]] | None = None
+) -> dict:
     """Run-level task-quality provenance (issue #7): the pinned judge +
     answer models and the versioned rubric identity, so two runs can never
-    be silently compared across grading behavior."""
+    be silently compared across grading behavior. `served_models` records
+    what the gateway actually served per role — the version of record
+    when a gateway resolves pinned ids to concrete snapshots."""
     if not config.task_quality:
         return {"enabled": False}
-    return {
+    meta = {
         "enabled": True,
         "answer_model": config.answer_model,
         "judge_model": config.judge_model,
@@ -303,6 +309,10 @@ def _task_quality_meta(config: RunConfig) -> dict:
             "confidence": DEFAULT_CONFIDENCE,
         },
     }
+    if served_models is not None:
+        meta["served_answer_models"] = served_models["answer"]
+        meta["served_judge_models"] = served_models["judge"]
+    return meta
 
 
 def _run_id(config: RunConfig, config_raw: str, golden_bytes: bytes, created_at: str) -> str:
@@ -318,9 +328,6 @@ def _run_id(config: RunConfig, config_raw: str, golden_bytes: bytes, created_at:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     return f"{stamp}-{config.name}-{digest.hexdigest()[:8]}"
 
-
-def _mean(values: list[float]) -> float:
-    return round(sum(values) / len(values), 4) if values else 0.0
 
 
 def _nullable_round(value: float | None) -> float | None:

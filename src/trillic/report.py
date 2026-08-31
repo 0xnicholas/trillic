@@ -75,15 +75,27 @@ def render_report_md(metrics: dict) -> str:
 
 def _task_quality_header_lines(task_quality: dict) -> list[str]:
     """Provenance lines for the judge loop (issue #7): pinned models and
-    the versioned rubric hash go in every report that graded answers."""
+    the versioned rubric hash go in every report that graded answers.
+    Gateway aliasing (served != pinned) is called out explicitly — the
+    served id is the version of record for the pin discipline."""
     if not task_quality.get("enabled"):
         return ["- task quality: disabled (quality.task_quality = false)"]
     bootstrap = task_quality["bootstrap"]
+    served = []
+    if task_quality.get("served_answer_models") not in (None, [task_quality["answer_model"]]):
+        served.append(
+            f"answer served as {', '.join(task_quality['served_answer_models'])}"
+        )
+    if task_quality.get("served_judge_models") not in (None, [task_quality["judge_model"]]):
+        served.append(
+            f"judge served as {', '.join(task_quality['served_judge_models'])}"
+        )
+    alias_note = f" (gateway aliasing: {'; '.join(served)})" if served else ""
     return [
         f"- task quality: judge {task_quality['judge_model']}"
         f" (rubric v{task_quality['judge_rubric_version']}"
         f" sha256 `{task_quality['judge_rubric_sha256'][:12]}…`),"
-        f" answer model {task_quality['answer_model']}",
+        f" answer model {task_quality['answer_model']}{alias_note}",
         f"- significance: {bootstrap['method']}, {bootstrap['n_resamples']}"
         f" resamples, seed {bootstrap['seed']},"
         f" {bootstrap['confidence']:.0%} CI",

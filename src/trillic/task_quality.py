@@ -24,8 +24,10 @@ from trillic.bootstrap import (
 from trillic.clients.gateway import GatewayClient
 from trillic.golden import GoldenItem
 from trillic.judge import judge_prompt, parse_judge_scores, score_of
+from trillic.quality import rounded_mean
 from trillic.tasks import task_prompt
 
+# Per-row rounding matches rounded_mean's 4-decimal metrics caliber.
 _ROUND = 4
 
 
@@ -58,6 +60,18 @@ class TaskQualityLoop:
         self._seed = seed
         self._n_resamples = n_resamples
         self._originals: dict[str, dict] | None = None
+        # Models the gateway REPORTS serving (the version of record for the
+        # pin discipline — may differ from the requested pins when the
+        # gateway aliases).
+        self._served_answer_models: set[str] = set()
+        self._served_judge_models: set[str] = set()
+
+    def served_models(self) -> dict[str, list[str]]:
+        """Sorted unique served model ids per role, for the run report."""
+        return {
+            "answer": sorted(self._served_answer_models),
+            "judge": sorted(self._served_judge_models),
+        }
 
     def prime_originals(self, items: list[GoldenItem]) -> None:
         """Answer + judge the ORIGINAL prompts once (level-independent)."""
@@ -124,9 +138,11 @@ class TaskQualityLoop:
         return {
             "aggressiveness": level,
             "item_count": len(rows),
-            "mean_original_score": _mean([r["original_score"] for r in rows]),
-            "mean_compressed_score": _mean([r["compressed_score"] for r in rows]),
-            "mean_delta": _mean(deltas),
+            "mean_original_score": rounded_mean([r["original_score"] for r in rows]),
+            "mean_compressed_score": rounded_mean(
+                [r["compressed_score"] for r in rows]
+            ),
+            "mean_delta": rounded_mean(deltas),
             "delta_ci95": {
                 "low": round(bootstrap.ci_low, _ROUND),
                 "high": round(bootstrap.ci_high, _ROUND),
@@ -139,15 +155,13 @@ class TaskQualityLoop:
         """Answer the load-type task for `payload`, judge against the
         golden key_points. One answer call + one judge call."""
         key_points = list(item.key_points)
-        answer = self._gateway.chat(
+        answered = self._gateway.chat(
             self._answer_model, task_prompt(item.load_type, payload)
-        ).content
-        verdict = self._gateway.chat(
-            self._judge_model, judge_prompt(key_points, answer)
-        ).content
-        scores = parse_judge_scores(verdict, len(key_points))
-        return {"answer": answer, "scores": scores, "score": score_of(scores)}
-
-
-def _mean(values: list[float]) -> float:
-    return round(sum(values) / len(values), _ROUND) if values else 0.0
+        )
+        self._served_answer_models.add(answered.model)
+        judged = self._gateway.chat(
+            self._judge_model, judge_prompt(key_points, answered.content)
+        )
+        self._served_judge_models.add(judged.model)
+        scores = parse_judge_scores(judged.content, len(key_points))
+        return {"answer": answered.content, "scores": scores, "score": score_of(scores)}

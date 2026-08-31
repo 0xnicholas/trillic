@@ -83,6 +83,12 @@ def text_token_f05(original: str, compressed: str) -> float:
     return token_f05(original.split(), compressed.split())
 
 
+def rounded_mean(values: list[float]) -> float:
+    """Mean rounded to 4 decimals (the metrics.json/report caliber);
+    0.0 for an empty list (aggregates over zero items)."""
+    return round(sum(values) / len(values), 4) if values else 0.0
+
+
 def percentile(values: list[float], p: float) -> float | None:
     """Linear-interpolation percentile (p in [0, 100]).
 

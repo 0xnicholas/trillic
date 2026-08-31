@@ -65,6 +65,27 @@ class TestHttpGatewayClient:
         assert result.content == "model answer"
         assert result.usage == {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18}
 
+    def test_served_model_is_recorded_over_the_requested_id(self):
+        """Issue #7 pin discipline: the gateway's served model id (e.g. an
+        alias resolving to a dated snapshot) is the version of record."""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            response = dict(COMPLETION_RESPONSE)
+            response["model"] = "task-model-2026-08-01"
+            return httpx.Response(200, json=response)
+
+        client = make_client(handler, service_key="k")
+        result = client.chat(model="task-model", prompt="q?")
+        assert result.model == "task-model-2026-08-01"
+
+    def test_missing_served_model_falls_back_to_requested_id(self):
+        client = make_client(
+            handler=lambda request: httpx.Response(200, json=COMPLETION_RESPONSE),
+            service_key="k",
+        )
+        result = client.chat(model="task-model", prompt="q?")
+        assert result.model == "task-model"
+
     def test_service_key_defaults_to_env_variable(self, monkeypatch):
         monkeypatch.setenv("REFINE_SERVICE_KEY", "env-key")
 

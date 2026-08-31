@@ -120,6 +120,16 @@ class TestPriming:
         for item in ITEMS:
             assert loop.original_score(item.id) == pytest.approx(1.0)
 
+    def test_served_models_tracked_per_role(self):
+        loop = make_loop(RecordingGateway())
+        loop.prime_originals(ITEMS)
+        loop.evaluate_level(0.2, ITEMS, [i.prompt for i in ITEMS])
+        # the stub gateway echoes the requested id, so served == pinned
+        assert loop.served_models() == {
+            "answer": ["stub-answerer"],
+            "judge": ["stub-judge"],
+        }
+
     def test_priming_twice_is_rejected(self):
         gateway = RecordingGateway()
         loop = make_loop(gateway)

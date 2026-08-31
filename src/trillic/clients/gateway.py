@@ -33,7 +33,7 @@ class GatewayError(Exception):
 @dataclass(frozen=True)
 class ChatResult:
     content: str
-    model: str
+    model: str  # the model the GATEWAY reports serving (falls back to the requested id)
     usage: dict[str, int] | None
 
 
@@ -97,7 +97,12 @@ def _parse_completion(data: object, model: str) -> ChatResult:
     except (KeyError, TypeError) as e:
         raise GatewayError(f"malformed gateway response: missing field 'content': {e}") from e
     usage: Any = data.get("usage")
-    return ChatResult(content=content, model=model, usage=usage)
+    # Record what the gateway SERVED, not what we asked for: gateway-side
+    # model aliasing must stay visible in run reports (issue #7 pins judge
+    # and answer model versions; the served id is the version of record).
+    served = data.get("model")
+    served_model = served if isinstance(served, str) and served else model
+    return ChatResult(content=content, model=served_model, usage=usage)
 
 
 class StubGatewayClient:

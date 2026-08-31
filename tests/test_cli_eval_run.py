@@ -225,6 +225,9 @@ class TestEvalRunHappyPath:
         assert top["bootstrap"]["n_resamples"] == 10_000
         assert top["bootstrap"]["seed"] == 0
         assert top["bootstrap"]["confidence"] == 0.95
+        # the stub gateway serves exactly the requested ids (no aliasing)
+        assert top["served_answer_models"] == ["stub-answerer"]
+        assert top["served_judge_models"] == ["stub-judge"]
 
         block = self.level["aggregate"]["task_quality"]
         assert block is not None

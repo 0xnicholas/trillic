@@ -145,8 +145,10 @@ def mechanical_coverage_score(key_point: str, answer: str) -> int:
     """Deterministic baseline judge: a key point is covered iff every one
     of its significant words appears in the answer.
 
-    This is the stub gateway's judge and a cheap cross-check for real
-    judge output — it is NOT the report's quality number.
+    This is the stub gateway's judge — the behavior that makes the
+    task-quality loop runnable (and directionally checkable) with zero
+    network. It is NOT the report's quality number: real runs grade with
+    the configured judge model.
     """
     words = significant_words(key_point)
     if not words:
