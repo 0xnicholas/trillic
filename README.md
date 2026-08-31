@@ -65,6 +65,17 @@ uv run trillic eval run \
   content_sha1 对重生成比对,漂移即拒)。golden 文件
   `eval/golden/sysprompt_pilot.jsonl`(10 条,key_points 全部为行为约束型:
   格式/拒绝/语气,激活用户消息内嵌于 prompt)。
+- **多轮对话 pilot**(issue #5):多轮对话历史无公开数据集可抄——旧仓
+  `compression/eval/conversation_gen.py`(同作者)的 5 个场景族移植为
+  `src/trillic/dialogue.py` 并新增 5 族,共 10 族种子化槽位合成。结构 =
+  多轮 user/assistant 历史(`"role: content"` 行序列化,含代码块)+ 末轮
+  用户消息(要求回忆历史事实);key_points 全部为历史事实型(名称/日期/
+  先前决定),逐条以原文措辞引用历史(机检 ≥4 连续词重叠),压缩后可判
+  存活。种子分流与 sysprompt 同构:分流权威在
+  `eval/manifests/dialogue_families.toml`(eval 101–110 / train 901–910
+  永不相交),生成记录在 `eval/manifests/dialogue.json`(含逐条
+  content_sha1 漂移拒)。golden 文件 `eval/golden/dialogue_pilot.jsonl`
+  (10 条,682–1266 tiktoken tokens/条)。
 - **假桩注入**:sidecar(POST /refine)与网关客户端均为可注入协议,
   配置 `mode = "stub" | "http"` 切换;全部测试零网络。
 - **离线 tiktoken**:测试通过仓内缓存(`eval/assets/tiktoken_cache/`)
@@ -77,5 +88,5 @@ uv run trillic eval run \
 ## 状态
 
 阶段 1(评测基线)进行中:评测 harness walking skeleton(#2)、Golden
-骨架 + RAG pilot(#3)、system prompt pilot(#4)已落地;多轮对话 pilot、
-指标全集与任务级质量见后续子票。
+骨架 + RAG pilot(#3)、system prompt pilot(#4)、多轮对话 pilot(#5)已
+落地;指标全集与任务级质量见后续子票。

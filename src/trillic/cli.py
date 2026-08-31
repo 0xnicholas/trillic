@@ -1,7 +1,8 @@
 """trillic CLI.
 
-Subcommand families (issue #1): `eval *` now; `golden *` arrives with
-issue #3. All errors surface as `error: ...` on stderr with exit code 1.
+Subcommand families (issue #1): `eval *` now; `golden *` covers schema
+validation, split manifests, and the three pilot generators (issues
+#3/#4/#5). All errors surface as `error: ...` on stderr with exit code 1.
 """
 
 import argparse
@@ -13,6 +14,13 @@ from trillic import __version__
 from trillic.clients.gateway import GatewayError
 from trillic.clients.sidecar import RefineError
 from trillic.config import ConfigError, load_config
+from trillic.dialogue import (
+    DialogueError,
+    build_dialogue_entries,
+    build_dialogue_manifest,
+    load_families as load_dialogue_families,
+    make_review as make_dialogue_review,
+)
 from trillic.golden import GoldenError, collect_golden_errors
 from trillic.longbench import LongBenchError, build_manifest, build_rag_entries
 from trillic.report import ReportWriterError
@@ -129,6 +137,48 @@ def build_parser() -> argparse.ArgumentParser:
         help="family=seed pairs, e.g. support_logistics=101,finance_analyst=101",
     )
     sysprompt_build_parser.add_argument("--out", required=True, type=Path)
+
+    dialogue_manifest_parser = golden_sub.add_parser(
+        "manifest-dialogue",
+        help="generate the dialogue family seed-split manifest",
+    )
+    dialogue_manifest_parser.add_argument(
+        "--families", required=True, type=Path,
+        help="scenario-family registry (TOML: seed pools + licenses per family)",
+    )
+    dialogue_manifest_parser.add_argument(
+        "--golden", type=Path, default=None,
+        help="frozen golden jsonl to verify against regeneration and record",
+    )
+    dialogue_manifest_parser.add_argument(
+        "--review-status", choices=("pending", "approved"), default=None,
+        help="owner sign-off record for the pilot (requires --golden)",
+    )
+    dialogue_manifest_parser.add_argument(
+        "--reviewer", default=None,
+        help="who performed the review (requires --review-status)",
+    )
+    dialogue_manifest_parser.add_argument(
+        "--review-notes", default=None,
+        help="free-text review notes (requires --review-status)",
+    )
+    dialogue_manifest_parser.add_argument(
+        "--out", required=True, type=Path, help="output manifest JSON path",
+    )
+
+    dialogue_build_parser = golden_sub.add_parser(
+        "build-dialogue",
+        help="seeded synthesis of dialogue golden entries (eval seeds only)",
+    )
+    dialogue_build_parser.add_argument(
+        "--families", required=True, type=Path,
+        help="scenario-family registry (TOML)",
+    )
+    dialogue_build_parser.add_argument(
+        "--seeds", required=True,
+        help="family=seed pairs, e.g. support_ticket=101,vendor_procurement=101",
+    )
+    dialogue_build_parser.add_argument("--out", required=True, type=Path)
     return parser
 
 
@@ -150,10 +200,15 @@ def main(argv: list[str] | None = None) -> int:
                 return _golden_manifest_sysprompt(args)
             if args.golden_command == "build-sysprompt":
                 return _golden_build_sysprompt(args)
+            if args.golden_command == "manifest-dialogue":
+                return _golden_manifest_dialogue(args)
+            if args.golden_command == "build-dialogue":
+                return _golden_build_dialogue(args)
         except (
             GoldenError,
             LongBenchError,
             SysPromptError,
+            DialogueError,
             ValueError,
             OSError,
         ) as e:
@@ -272,5 +327,45 @@ def _golden_build_sysprompt(args: argparse.Namespace) -> int:
     print(
         f"{args.out}: {len(entries)} entries (eval seeds only — "
         "hand-review, then freeze via manifest-sysprompt --golden)"
+    )
+    return 0
+
+
+def _golden_manifest_dialogue(args: argparse.Namespace) -> int:
+    families = load_dialogue_families(args.families)
+    review = None
+    if args.review_status is not None:
+        if args.golden is None:
+            raise ValueError("--review-status requires --golden (no pilot to review)")
+        review = make_dialogue_review(
+            args.review_status, reviewer=args.reviewer, notes=args.review_notes or ""
+        )
+    manifest = build_dialogue_manifest(
+        families, golden_path=args.golden, review=review
+    )
+    args.out.write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    pilot = f", pilot: {manifest['pilot']['entries']} entries verified" if "pilot" in manifest else ""
+    print(f"{args.out}: {len(manifest['families'])} families{pilot}")
+    return 0
+
+
+def _golden_build_dialogue(args: argparse.Namespace) -> int:
+    families = load_dialogue_families(args.families)
+    seed_plan: dict[str, list[int]] = {}
+    for part in str(args.seeds).split(","):
+        name, _, value = part.strip().partition("=")
+        if not name or not value:
+            raise ValueError(f"bad --seeds item {part!r} (expected family=seed)")
+        seed_plan.setdefault(name, []).append(int(value))
+    entries = build_dialogue_entries(families, seed_plan)
+    args.out.write_text(
+        "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in entries),
+        encoding="utf-8",
+    )
+    print(
+        f"{args.out}: {len(entries)} entries (eval seeds only — "
+        "hand-review, then freeze via manifest-dialogue --golden)"
     )
     return 0

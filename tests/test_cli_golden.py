@@ -1,4 +1,5 @@
-"""`trillic golden *` CLI: validate / manifest / build-rag / sysprompt family.
+"""`trillic golden *` CLI: validate / manifest / build-rag / sysprompt and
+  dialogue families.
 
 External behavior only: argv in, files + stdout/stderr + exit codes out.
 """
@@ -9,6 +10,7 @@ from pathlib import Path
 from trillic.cli import main
 from trillic.longbench import build_manifest
 from trillic.sysprompt import load_families
+from trillic.dialogue import load_families as load_dialogue_families
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FAMILIES_TOML = REPO_ROOT / "eval" / "manifests" / "sysprompt_families.toml"
@@ -223,12 +225,132 @@ class TestGoldenBuildSysprompt:
         assert "error" in capsys.readouterr().err
 
 
+class TestGoldenManifestDialogue:
+    DIALOGUE_TOML = REPO_ROOT / "eval" / "manifests" / "dialogue_families.toml"
+
+    def test_writes_manifest_with_pilot_record(self, tmp_path, capsys):
+        out = tmp_path / "dialogue.json"
+        golden = tmp_path / "pilot.jsonl"
+        _write_dialogue_pilot(golden)
+        args = [
+            "golden", "manifest-dialogue",
+            "--families", str(self.DIALOGUE_TOML),
+            "--golden", str(golden),
+            "--out", str(out),
+        ]
+        assert main(args) == 0
+        manifest = json.loads(out.read_text())
+        assert manifest["pilot"]["entries"] == 10
+        assert len(manifest["families"]) == 10
+        capsys.readouterr()
+
+    def test_manifest_without_golden_records_allocation_only(self, tmp_path):
+        out = tmp_path / "dialogue.json"
+        assert main(
+            ["golden", "manifest-dialogue", "--families", str(self.DIALOGUE_TOML),
+             "--out", str(out)]
+        ) == 0
+        assert "pilot" not in json.loads(out.read_text())
+
+    def test_drifted_golden_errors(self, tmp_path, capsys):
+        golden = tmp_path / "drifted.jsonl"
+        _write_dialogue_pilot(golden, tamper_first=True)
+        code = main(
+            ["golden", "manifest-dialogue", "--families", str(self.DIALOGUE_TOML),
+             "--golden", str(golden), "--out", str(tmp_path / "m.json")]
+        )
+        assert code == 1
+        assert "content_sha1" in capsys.readouterr().err
+
+    def test_review_flags_record_owner_signoff(self, tmp_path, capsys):
+        golden = tmp_path / "pilot.jsonl"
+        _write_dialogue_pilot(golden)
+        out = tmp_path / "dialogue.json"
+        assert main(
+            ["golden", "manifest-dialogue", "--families", str(self.DIALOGUE_TOML),
+             "--golden", str(golden), "--review-status", "approved",
+             "--reviewer", "nicholas", "--review-notes", "spot-checked all 10",
+             "--out", str(out)]
+        ) == 0
+        review = json.loads(out.read_text())["pilot"]["review"]
+        assert review["status"] == "approved"
+        assert review["reviewer"] == "nicholas"
+        assert "spot-checked" in review["notes"]
+        capsys.readouterr()
+
+    def test_review_status_without_golden_errors(self, tmp_path, capsys):
+        code = main(
+            ["golden", "manifest-dialogue", "--families", str(self.DIALOGUE_TOML),
+             "--review-status", "approved", "--out", str(tmp_path / "m.json")]
+        )
+        assert code == 1
+        assert "--golden" in capsys.readouterr().err
+
+
+class TestGoldenBuildDialogue:
+    DIALOGUE_TOML = REPO_ROOT / "eval" / "manifests" / "dialogue_families.toml"
+
+    def test_builds_validated_golden_file_deterministically(self, tmp_path, capsys):
+        out = tmp_path / "draft.jsonl"
+        seeds = "support_ticket=101,vendor_procurement=101"
+        args = [
+            "golden", "build-dialogue",
+            "--families", str(self.DIALOGUE_TOML),
+            "--seeds", seeds,
+            "--out", str(out),
+        ]
+        assert main(args) == 0
+        first = out.read_text()
+        assert main(args) == 0
+        assert out.read_text() == first
+        from trillic.golden import load_golden
+
+        items = load_golden(out)
+        assert [i.id for i in items] == [
+            "dlg-support_ticket-s101",
+            "dlg-vendor_procurement-s101",
+        ]
+        capsys.readouterr()
+
+    def test_train_seed_plan_errors(self, tmp_path, capsys):
+        code = main(
+            ["golden", "build-dialogue", "--families", str(self.DIALOGUE_TOML),
+             "--seeds", "support_ticket=901", "--out", str(tmp_path / "d.jsonl")]
+        )
+        assert code == 1
+        assert "TRAIN seed" in capsys.readouterr().err
+
+    def test_bad_seeds_syntax_errors(self, tmp_path, capsys):
+        code = main(
+            ["golden", "build-dialogue", "--families", str(self.DIALOGUE_TOML),
+             "--seeds", "support_ticket", "--out", str(tmp_path / "d.jsonl")]
+        )
+        assert code == 1
+        assert "error" in capsys.readouterr().err
+
+
 def _write_pilot(path: Path, tamper_first: bool = False) -> None:
     families = load_families(FAMILIES_TOML)
     plan = {f["name"]: [f["eval_seed_range"][0]] for f in families}
     from trillic.sysprompt import build_sysprompt_entries
 
     entries = build_sysprompt_entries(families, plan)
+    if tamper_first:
+        entries[0]["prompt"] += " tampered tail"
+    path.write_text(
+        "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in entries),
+        encoding="utf-8",
+    )
+
+
+def _write_dialogue_pilot(path: Path, tamper_first: bool = False) -> None:
+    families = load_dialogue_families(
+        REPO_ROOT / "eval" / "manifests" / "dialogue_families.toml"
+    )
+    plan = {f["name"]: [f["eval_seed_range"][0]] for f in families}
+    from trillic.dialogue import build_dialogue_entries
+
+    entries = build_dialogue_entries(families, plan)
     if tamper_first:
         entries[0]["prompt"] += " tampered tail"
     path.write_text(
