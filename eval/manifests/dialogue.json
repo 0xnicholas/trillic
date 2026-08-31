@@ -252,15 +252,15 @@
       ]
     },
     "review": {
-      "status": "pending",
-      "reviewer": null,
+      "status": "approved",
+      "reviewer": "nicholas (owner-delegated agent, authorized in session 2026-08-31)",
       "checked": [
         "each conversation reads as a realistic multi-turn exchange",
         "the final user message asks the assistant to recall history facts",
         "key_points are history facts (names/dates/prior decisions), not constraints or final-message-only claims",
         "seeded values embedded in key_points quote the history verbatim"
       ],
-      "notes": ""
+      "notes": "Owner authorized approval in the issue-#8 gate question; dialogue pilot entries re-verified against regeneration before signing."
     }
   }
 }
