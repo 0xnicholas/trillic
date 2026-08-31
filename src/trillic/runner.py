@@ -114,7 +114,6 @@ def run_eval(
             judge_model=config.judge_model,
             rubric_sha256=rubric_sha256(),
             task_templates_sha256=task_templates_sha256(),
-            levels=levels,
         )
         journal = CallJournal(Path(out_root) / ".ledger" / f"{lid}.jsonl")
         if replay is None:

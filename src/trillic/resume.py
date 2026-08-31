@@ -180,10 +180,14 @@ def ledger_id(
     judge_model: str,
     rubric_sha256: str,
     task_templates_sha256: str,
-    levels: list[float],
 ) -> str:
-    """Identity of a run's billing surface: same exam + same pins + same
-    sweep = same ledger (a killed rerun resumes the same journal)."""
+    """Identity of a run's billing surface: same exam + same quality pins
+    = same ledger. Deliberately INDEPENDENT of sweep levels and of the
+    compression checkpoint: originals are level- and compressor-independent
+    (the golden prompt is the payload), and compressed entries are keyed by
+    (level, payload) content addressing anyway — so one journal serves a
+    rerun at different levels AND the second checkpoint of a dual-checkpoint
+    baseline (the original side replays, the compressed sides re-bill)."""
     digest = hashlib.sha256()
     for part in (
         golden_sha256,
@@ -191,7 +195,6 @@ def ledger_id(
         judge_model,
         rubric_sha256,
         task_templates_sha256,
-        ",".join(repr(level) for level in levels),
     ):
         digest.update(part.encode("utf-8"))
         digest.update(b"\x00")

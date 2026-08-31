@@ -220,3 +220,33 @@ class TestCrashJournal:
         assert calls["answers_fresh"] == 0
         assert calls["judges_fresh"] == 0
         assert calls["answers_reused"] == 6
+
+    def test_journal_shares_originals_across_levels_and_reruns(self, tmp_path):
+        """Originals are level-independent: a sweep rerun at different
+        levels (and, in a dual-checkpoint baseline, the second checkpoint)
+        replays the original side from the same journal and only bills the
+        new compressed sides."""
+        config = tmp_path / "one.toml"
+        config.write_text('name = "one"\n', encoding="utf-8")
+        metrics, _ = run(tmp_path, config=config)  # level 0.2, 6 fresh pairs
+        assert metrics["task_quality"]["gateway_calls"]["answers_fresh"] == 6
+
+        sweep = tmp_path / "sweep.toml"
+        sweep.write_text(
+            'name = "sweep"\n\n[run]\nlevels = [0.2, 0.4]\n', encoding="utf-8"
+        )
+        code = main(
+            ["eval", "run", "--config", str(sweep), "--golden", str(FIXTURE_GOLDEN),
+             "--out", str(tmp_path / "runs")]
+        )
+        assert code == 0
+        rerun_dir = max(
+            p for p in (tmp_path / "runs").iterdir()
+            if p.is_dir() and not p.name.startswith(".")
+        )
+        rerun = json.loads((rerun_dir / "metrics.json").read_text())
+        calls = rerun["task_quality"]["gateway_calls"]
+        # 3 originals replayed + 3 level-0.2 compressed sides replayed;
+        # only the level-0.4 compressed sides are fresh
+        assert calls["answers_fresh"] == 3
+        assert calls["answers_reused"] == 6
