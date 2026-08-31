@@ -2,8 +2,8 @@
 
 Calibers are shared with the refine runtime guardrail
 (tokencamp-pro/sidecars/refine/refiner.py) so harness numbers compare
-against runtime thresholds on the same algebra (references.md:
-_FACT_PATTERN 两侧复用):
+against runtime thresholds on the same algebra — the regex below is the
+reused-on-both-sides pattern that references.md pins:
 
 - fact recall: verbatim survival of numeric facts/codes under the SAME
   regex as refiner._FACT_PATTERN, same semantics (1.0 when the original

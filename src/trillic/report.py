@@ -103,10 +103,19 @@ def _render_level_section(level: dict, sidecar: dict) -> list[str]:
         f" removed {agg['corpus_native_compression_ratio']:.4f})",
         f"- mean fact recall: {agg['mean_fact_recall']:.4f},"
         f" mean token F0.5: {agg['mean_token_f05']:.4f}",
-        f"- latency: p50 {latency['p50_seconds']:.4f}s /"
-        f" p95 {latency['p95_seconds']:.4f}s"
-        f" (mean {latency['mean_seconds']:.4f}s, n={agg['item_count']})",
+        f"- latency: {_latency_line(latency, agg['item_count'])}",
         "- task-level quality: pending (issue #7 — LLM judge on key_points)",
         "",
     ]
     return lines
+
+
+def _latency_line(latency: dict, item_count: int) -> str:
+    """Latency summary; percentiles are None for an empty item list."""
+    if latency["p50_seconds"] is None or latency["p95_seconds"] is None:
+        return f"no samples (n={item_count})"
+    return (
+        f"p50 {latency['p50_seconds']:.4f}s /"
+        f" p95 {latency['p95_seconds']:.4f}s"
+        f" (mean {latency['mean_seconds']:.4f}s, n={item_count})"
+    )

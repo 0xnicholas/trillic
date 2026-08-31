@@ -99,6 +99,11 @@ def _scan_golden(
         else:
             seen_ids.add(item.id)
             items.append(item)
+    if not items and not errors:
+        errors.append(
+            f"{path}: no entries found — an empty golden set is a mistake "
+            "(wrong path or truncated file), not a valid exam"
+        )
     return items, errors
 
 

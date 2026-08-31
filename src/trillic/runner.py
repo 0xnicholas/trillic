@@ -25,7 +25,7 @@ from trillic.clients.sidecar import (
 )
 from trillic.config import RunConfig
 from trillic.golden import GoldenItem, load_golden
-from trillic.native_tokens import build_native_counter
+from trillic.native_tokens import NativeCounter, build_native_counter
 from trillic.quality import fact_recall, percentile, text_token_f05
 from trillic.report import render_report_md, write_run_dir
 from trillic.tokens import TokenCounter, compression_ratio, kept_ratio
@@ -67,22 +67,24 @@ def run_eval(config: RunConfig, config_path: Path, golden_path: Path, out_root: 
     levels = config.effective_levels()
 
     level_blocks = []
+    refine_meta: list[tuple[GoldenItem, RefineResult, float]] = []
     for level in levels:
         refine_results = _refine_all(sidecar, items, config, level)
-        level_blocks.append(
-            _build_level_block(
-                level=level,
-                refine_results=refine_results,
-                counter=counter,
-                native=native,
-            )
+        block, meta = _build_level_block(
+            level=level,
+            refine_results=refine_results,
+            counter=counter,
+            native=native,
         )
+        level_blocks.append(block)
+        if not refine_meta:
+            refine_meta = meta
 
     metrics = _build_metrics(
         config=config,
         config_path=config_path,
         golden_path=golden_path,
-        refine_results=level_blocks[0]["_refine_meta"] if level_blocks else [],
+        refine_results=refine_meta,
         level_blocks=level_blocks,
         counter=counter,
         native_caliber=native.caliber_name,
@@ -117,9 +119,14 @@ def _build_level_block(
     level: float,
     refine_results: list[tuple[GoldenItem, RefineResult, float]],
     counter: TokenCounter,
-    native,
-) -> dict:
-    """One sweep level: per-item rows + aggregate (four metric slots)."""
+    native: NativeCounter,
+) -> tuple[dict, list[tuple[GoldenItem, RefineResult, float]]]:
+    """One sweep level: per-item rows + aggregate (four metric slots).
+
+    Returns (block, refine_results) so per-item rows and the caller's
+    sidecar metadata stay separate — the block is exactly what gets
+    serialized into metrics.json.
+    """
     item_rows = []
     for item, result, latency in refine_results:
         original_tokens = counter.count(item.prompt)
@@ -184,15 +191,14 @@ def _build_level_block(
         "aggressiveness": level,
         "items": item_rows,
         "aggregate": aggregate,
-        "_refine_meta": refine_results,
-    }
+    }, refine_results
 
 
 def _build_metrics(
     config: RunConfig,
     config_path: Path,
     golden_path: Path,
-    refine_results: list,
+    refine_results: list[tuple[GoldenItem, RefineResult, float]],
     level_blocks: list[dict],
     counter: TokenCounter,
     native_caliber: str,
@@ -242,10 +248,7 @@ def _build_metrics(
         "metrics": {
             "tiktoken_encoding": counter.encoding_name,
             "native_caliber": native_caliber,
-            "levels": [
-                {key: block[key] for key in ("aggressiveness", "items", "aggregate")}
-                for block in level_blocks
-            ],
+            "levels": level_blocks,
         },
     }
     return metrics

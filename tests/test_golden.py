@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from trillic.golden import GoldenError, GoldenItem, load_golden
+from trillic.golden import GoldenError, GoldenItem, collect_golden_errors, load_golden
 
 VALID = {
     "id": "rag-qasper-0001",
@@ -77,6 +77,17 @@ def test_blank_lines_are_skipped(tmp_path):
         json.dumps(a) + "\n\n" + json.dumps(b) + "\n"
     )
     assert [i.id for i in load_golden(path)] == ["a", "b"]
+
+
+def test_file_with_no_entries_is_rejected(tmp_path):
+    """An empty golden set is a mistake (wrong path, truncated file), not a
+    valid exam — reject rather than produce an empty report."""
+    path = tmp_path / "golden.jsonl"
+    path.write_text("\n\n")
+    with pytest.raises(GoldenError, match="no entries"):
+        load_golden(path)
+    errors = collect_golden_errors(path)
+    assert len(errors) == 1 and "no entries" in errors[0]
 
 
 def test_missing_file_reports_path(tmp_path):

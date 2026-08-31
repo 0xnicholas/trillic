@@ -32,7 +32,7 @@ checkpoint 上领域微调出自有模型,在压缩质量、压缩率、query-aw
 ## 开发
 
 技术栈:Python 3.12+,uv 管理依赖,pytest 测试。依赖刻意保持最小
-(httpx、tiktoken、pytest),不含训练栈。
+(httpx、tiktoken、tokenizers、pytest),不含训练栈。
 
 ```bash
 uv sync                    # 安装依赖
