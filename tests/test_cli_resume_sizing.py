@@ -184,3 +184,39 @@ class TestEvalSizing:
         code = main(["eval", "sizing", "--run", str(run_dir)])
         assert code == 1
         assert "task_quality" in capsys.readouterr().err
+
+
+class TestCrashJournal:
+    """Issue #8: kill a run mid-flight, rerun with the same config — the
+    journal replays completed gateway work, zero re-billing."""
+
+    def test_journal_written_incrementally_and_rerun_replays_it(self, tmp_path):
+        config = tmp_path / "run.toml"
+        config.write_text('name = "cli8"\n', encoding="utf-8")
+        metrics, run_dir = run(tmp_path, config=config)
+        # journal exists under the runs root, one line per fresh result
+        journals = list((tmp_path / "runs" / ".ledger").glob("*.jsonl"))
+        assert len(journals) == 1
+        lines = [json.loads(l) for l in journals[0].read_text().splitlines() if l.strip()]
+        # one line per _answer_and_judge pair (covers both gateway calls):
+        # 3 originals + 3 compressed
+        assert len(lines) == 6
+        assert len([l for l in lines if l["kind"] == "original"]) == 3
+        assert len([l for l in lines if l["kind"] == "compressed"]) == 3
+
+        # simulate the kill: the completed run dir vanishes (metrics never
+        # written); rerun the same config + golden against the same root
+        import shutil
+
+        shutil.rmtree(run_dir)
+        code = main(
+            ["eval", "run", "--config", str(config), "--golden", str(FIXTURE_GOLDEN),
+             "--out", str(tmp_path / "runs")]
+        )
+        assert code == 0
+        rerun_dir = max(p for p in (tmp_path / "runs").iterdir() if p.is_dir())
+        rerun = json.loads((rerun_dir / "metrics.json").read_text())
+        calls = rerun["task_quality"]["gateway_calls"]
+        assert calls["answers_fresh"] == 0
+        assert calls["judges_fresh"] == 0
+        assert calls["answers_reused"] == 6

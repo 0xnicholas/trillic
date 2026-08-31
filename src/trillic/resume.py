@@ -17,6 +17,7 @@ The prior run's metrics.json IS the ledger — no second format to keep in
 sync, and run immutability is preserved (a resume writes a fresh run dir).
 """
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -170,3 +171,116 @@ def load_replay_from_run_dir(run_dir: Path) -> Replay:
     except (OSError, json.JSONDecodeError) as e:
         raise ResumeError(f"cannot resume: cannot read {metrics_path}: {e}") from e
     return load_replay(metrics)
+
+
+def ledger_id(
+    *,
+    golden_sha256: str,
+    answer_model: str,
+    judge_model: str,
+    rubric_sha256: str,
+    task_templates_sha256: str,
+    levels: list[float],
+) -> str:
+    """Identity of a run's billing surface: same exam + same pins + same
+    sweep = same ledger (a killed rerun resumes the same journal)."""
+    digest = hashlib.sha256()
+    for part in (
+        golden_sha256,
+        answer_model,
+        judge_model,
+        rubric_sha256,
+        task_templates_sha256,
+        ",".join(repr(level) for level in levels),
+    ):
+        digest.update(part.encode("utf-8"))
+        digest.update(b"\x00")
+    return digest.hexdigest()[:16]
+
+
+class CallJournal:
+    """Append-only crash journal: one line per FRESH gateway result, written
+    immediately after the call so a kill loses at most the in-flight item.
+
+    A rerun with the same ledger identity (config + golden) replays the
+    journal instead of re-billing — this is what makes "kill and rerun,
+    zero duplicate gateway calls" hold for interrupted runs, whose
+    metrics.json never materialized.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self.path = Path(path)
+        self._file = None
+
+    @classmethod
+    def load_replay(cls, path: Path, pins: dict) -> Replay | None:
+        """Build a Replay from a journal file (None if absent/empty).
+
+        `pins` supplies the identity fields the journal itself does not
+        carry per line (they are its filename)."""
+        path = Path(path)
+        if not path.is_file():
+            return None
+        replay = Replay(**pins)
+        with path.open(encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue  # torn tail write from the kill; drop it
+                entry = {"answer": record["answer"], "scores": list(record["scores"])}
+                if record["kind"] == "original":
+                    replay.originals[record["item"]] = entry
+                else:
+                    replay.compressed[(record["level"], record["item"])] = {
+                        "payload": record["payload"],
+                        **entry,
+                    }
+        return replay if replay.originals or replay.compressed else None
+
+    def record(
+        self,
+        *,
+        kind: str,
+        item_id: str,
+        level: float | None,
+        payload: str | None,
+        answer: str,
+        scores: list[int],
+    ) -> None:
+        """Append one fresh result (best-effort: a journal write failure
+        must not kill a run that already paid for the call)."""
+        import sys
+
+        try:
+            if self._file is None:
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                self._file = self.path.open("a", encoding="utf-8")
+            self._file.write(
+                json.dumps(
+                    {
+                        "kind": kind,
+                        "item": item_id,
+                        "level": level,
+                        "payload": payload,
+                        "answer": answer,
+                        "scores": scores,
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+            self._file.flush()
+        except OSError:
+            print(
+                "warning: billing journal write failed "
+                f"({self.path}); resumability is degraded for this run",
+                file=sys.stderr,
+            )
+
+    def close(self) -> None:
+        if self._file is not None:
+            self._file.close()
+            self._file = None

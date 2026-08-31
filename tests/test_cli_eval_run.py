@@ -68,6 +68,16 @@ def strip_volatile(metrics):
         for item in level["items"]:
             item.pop("latency_seconds")
         level["aggregate"].pop("latency")
+    task_quality = stripped.get("task_quality") or {}
+    task_quality.pop("gateway_calls", None)  # journal reuse counts vary per run
+    # a fully-replayed run makes no calls, so no served-model observations
+    task_quality.pop("served_answer_models", None)
+    task_quality.pop("served_judge_models", None)
+    for level in stripped["metrics"]["levels"]:
+        block = level.get("aggregate", {}).get("task_quality") or {}
+        for row in block.get("items", []):
+            row.pop("source_original", None)
+            row.pop("source_compressed", None)
     return stripped
 
 
@@ -385,7 +395,8 @@ class TestDeterminismAndImmutability:
         run_eval(tmp_path, fixture_config_path, fixture_golden_path)
         run_eval(tmp_path, fixture_config_path, fixture_golden_path)
         out_root = tmp_path / "runs"
-        assert len(list(out_root.iterdir())) == 2
+        run_dirs = [p for p in out_root.iterdir() if p.is_dir() and not p.name.startswith(".")]
+        assert len(run_dirs) == 2  # .ledger/ (crash journal) is not a run
 
 
 class TestCliErrors:

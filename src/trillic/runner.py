@@ -33,7 +33,12 @@ from trillic.judge import RUBRIC_VERSION, rubric_sha256
 from trillic.native_tokens import NativeCounter, build_native_counter
 from trillic.quality import fact_recall, percentile, rounded_mean, text_token_f05
 from trillic.report import render_report_md, write_run_dir
-from trillic.resume import Replay, load_replay_from_run_dir
+from trillic.resume import (
+    CallJournal,
+    Replay,
+    ledger_id,
+    load_replay_from_run_dir,
+)
 from trillic.task_quality import TaskQualityError, TaskQualityLoop
 from trillic.tasks import task_templates_sha256
 from trillic.tokens import TokenCounter, compression_ratio, kept_ratio
@@ -97,8 +102,32 @@ def run_eval(
             )
         replay = load_replay_from_run_dir(resume_from)
 
+    journal = None
     task_loop = None
     if config.task_quality:
+        # Crash journal (issue #8: kill-and-rerun must not re-bill): same
+        # exam + pins + sweep -> same journal file; a rerun replays it
+        # automatically, no flag needed.
+        lid = ledger_id(
+            golden_sha256=golden_sha,
+            answer_model=config.answer_model,
+            judge_model=config.judge_model,
+            rubric_sha256=rubric_sha256(),
+            task_templates_sha256=task_templates_sha256(),
+            levels=levels,
+        )
+        journal = CallJournal(Path(out_root) / ".ledger" / f"{lid}.jsonl")
+        if replay is None:
+            pins = {
+                "golden_sha256": golden_sha,
+                "answer_model": config.answer_model,
+                "judge_model": config.judge_model,
+                "rubric_sha256": rubric_sha256(),
+                "task_templates_sha256": task_templates_sha256(),
+            }
+            journaled = CallJournal.load_replay(journal.path, pins)
+            if journaled is not None:
+                replay = journaled
         task_loop = TaskQualityLoop(
             build_gateway_client(config),
             answer_model=config.answer_model,
@@ -106,6 +135,7 @@ def run_eval(
             seed=config.seed,
             n_resamples=config.bootstrap_samples,
             replay=replay,
+            journal=journal,
         )
         # Originals are level-independent: answered + judged exactly once,
         # so a sweep pays for them one time only.
@@ -152,7 +182,10 @@ def run_eval(
         ),
     )
     report_md = render_report_md(metrics)
-    return write_run_dir(out_root, metrics, report_md)
+    run_dir = write_run_dir(out_root, metrics, report_md)
+    if journal is not None:
+        journal.close()
+    return run_dir
 
 
 def _refine_all(

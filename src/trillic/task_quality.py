@@ -25,7 +25,7 @@ from trillic.clients.gateway import GatewayClient
 from trillic.golden import GoldenItem
 from trillic.judge import judge_prompt, parse_judge_scores, rubric_sha256, score_of
 from trillic.quality import rounded_mean
-from trillic.resume import Replay
+from trillic.resume import CallJournal, Replay
 from trillic.tasks import task_prompt, task_templates_sha256
 
 # Per-row rounding matches rounded_mean's 4-decimal metrics caliber.
@@ -55,6 +55,7 @@ class TaskQualityLoop:
         seed: int,
         n_resamples: int,
         replay: Replay | None = None,
+        journal: CallJournal | None = None,
     ) -> None:
         self._gateway = gateway
         self._answer_model = answer_model
@@ -65,6 +66,7 @@ class TaskQualityLoop:
         # results are replayed (never re-billed) under content-addressed
         # conditions; see trillic.resume.
         self._replay = replay
+        self._journal = journal
         if replay is not None:
             replay.check_pins(
                 answer_model=answer_model,
@@ -113,10 +115,17 @@ class TaskQualityLoop:
                     "source": "reused",
                 }
             else:
-                self._originals[item.id] = {
-                    **self._answer_and_judge(item, item.prompt),
-                    "source": "fresh",
-                }
+                original = self._answer_and_judge(item, item.prompt)
+                if self._journal is not None:
+                    self._journal.record(
+                        kind="original",
+                        item_id=item.id,
+                        level=None,
+                        payload=None,
+                        answer=original["answer"],
+                        scores=original["scores"],
+                    )
+                self._originals[item.id] = {**original, "source": "fresh"}
 
     def original_score(self, item_id: str) -> float:
         if self._originals is None:
@@ -164,10 +173,17 @@ class TaskQualityLoop:
                     "source": "reused",
                 }
             else:
-                compressed = {
-                    **self._answer_and_judge(item, refined),
-                    "source": "fresh",
-                }
+                compressed_result = self._answer_and_judge(item, refined)
+                if self._journal is not None:
+                    self._journal.record(
+                        kind="compressed",
+                        item_id=item.id,
+                        level=level,
+                        payload=refined,
+                        answer=compressed_result["answer"],
+                        scores=compressed_result["scores"],
+                    )
+                compressed = {**compressed_result, "source": "fresh"}
             rows.append(
                 {
                     "id": item.id,
