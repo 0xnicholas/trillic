@@ -35,6 +35,7 @@ from trillic.quality import fact_recall, percentile, rounded_mean, text_token_f0
 from trillic.report import render_report_md, write_run_dir
 from trillic.resume import Replay, load_replay_from_run_dir
 from trillic.task_quality import TaskQualityError, TaskQualityLoop
+from trillic.tasks import task_templates_sha256
 from trillic.tokens import TokenCounter, compression_ratio, kept_ratio
 
 METRICS_SCHEMA_VERSION = 3
@@ -339,6 +340,7 @@ def _task_quality_meta(
         "judge_model": config.judge_model,
         "judge_rubric_version": RUBRIC_VERSION,
         "judge_rubric_sha256": rubric_sha256(),
+        "task_templates_sha256": task_templates_sha256(),
         "bootstrap": {
             "method": METHOD,
             "n_resamples": config.bootstrap_samples,

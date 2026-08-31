@@ -24,6 +24,7 @@ import pytest
 from trillic.clients.gateway import StubGatewayClient
 from trillic.golden import GoldenItem
 from trillic.judge import rubric_sha256
+from trillic.tasks import task_templates_sha256
 from trillic.resume import ResumeError, load_replay
 from trillic.task_quality import TaskQualityLoop
 
@@ -90,6 +91,7 @@ def prior_metrics(gateway_calls_shape: str = "full") -> dict:
             "answer_model": "stub-answerer",
             "judge_model": "stub-judge",
             "judge_rubric_sha256": rubric_sha256(),
+            "task_templates_sha256": task_templates_sha256(),
         },
         "metrics": {
             "levels": [
@@ -229,6 +231,25 @@ class TestReplayReuse:
         )
         with pytest.raises(ResumeError, match="golden"):
             loop.prime_originals(items, golden_sha256="g" * 64)
+
+    def test_task_template_mismatch_is_rejected(self):
+        replay = load_replay(prior_metrics())
+        replay.task_templates_sha256 = "changed" * 8  # re-framed tasks
+        with pytest.raises(ResumeError, match="task templates"):
+            TaskQualityLoop(
+                CountingGateway(),
+                answer_model="stub-answerer",
+                judge_model="stub-judge",
+                seed=0,
+                n_resamples=100,
+                replay=replay,
+            )
+
+    def test_run_predating_template_pinning_is_rejected(self):
+        raw = prior_metrics()
+        raw["task_quality"].pop("task_templates_sha256")
+        with pytest.raises(ResumeError, match="task-template pinning"):
+            load_replay(raw)
 
     def test_rubric_mismatch_is_rejected(self):
         replay = load_replay(prior_metrics())

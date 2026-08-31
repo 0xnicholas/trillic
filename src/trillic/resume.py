@@ -34,6 +34,7 @@ class Replay:
     answer_model: str
     judge_model: str
     rubric_sha256: str
+    task_templates_sha256: str
     # item id -> recorded original-side result
     originals: dict[str, dict] = field(default_factory=dict)
     # (aggressiveness, item id) -> recorded compressed-side result
@@ -51,9 +52,19 @@ class Replay:
         entry = self.compressed.get((level, item_id))
         return None if entry is None else entry["payload"]
 
-    def check_pins(self, *, answer_model: str, judge_model: str, rubric_sha256: str) -> None:
+    def check_pins(
+        self,
+        *,
+        answer_model: str,
+        judge_model: str,
+        rubric_sha256: str,
+        task_templates_sha256: str,
+    ) -> None:
         """Refuse replay when the quality pins changed (silent reuse across
-        a different configuration would poison the baseline)."""
+        a different configuration would poison the baseline). Pins cover
+        both sides of the ledger: judge-side rubric sha AND answer-side
+        task-template sha — answers generated under different framing are
+        not replayable."""
         if answer_model != self.answer_model:
             raise ResumeError(
                 f"cannot resume: answer_model changed (prior {self.answer_model!r} "
@@ -69,6 +80,13 @@ class Replay:
                 "cannot resume: judge rubric changed "
                 f"(prior sha256 {self.rubric_sha256[:12]}… vs {rubric_sha256[:12]}…) — "
                 "scores would not be comparable"
+            )
+        if task_templates_sha256 != self.task_templates_sha256:
+            raise ResumeError(
+                "cannot resume: task templates changed "
+                f"(prior sha256 {self.task_templates_sha256[:12]}… vs "
+                f"{task_templates_sha256[:12]}…) — recorded answers were "
+                "generated under different framing"
             )
 
     def check_golden(self, golden_sha256: str) -> None:
@@ -101,11 +119,19 @@ def load_replay(metrics: dict) -> Replay:
             "(quality.task_quality was disabled)"
         )
 
+    try:
+        task_templates_sha = task_quality["task_templates_sha256"]
+    except KeyError:
+        raise ResumeError(
+            "cannot resume: the prior run predates task-template pinning — "
+            "its answers' framing is unverifiable; re-run it fresh"
+        ) from None
     replay = Replay(
         golden_sha256=metrics["golden"]["sha256"],
         answer_model=task_quality["answer_model"],
         judge_model=task_quality["judge_model"],
         rubric_sha256=task_quality["judge_rubric_sha256"],
+        task_templates_sha256=task_templates_sha,
     )
     for level in metrics.get("metrics", {}).get("levels", []):
         payloads = {

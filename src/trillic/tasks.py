@@ -15,6 +15,8 @@ conditions of a pair — only the payload differs — so the measured quality
 delta isolates what compression did to the payload.
 """
 
+import hashlib
+
 from trillic.golden import LOAD_TYPES
 
 TASK_INSTRUCTIONS: dict[str, str] = {
@@ -36,6 +38,22 @@ TASK_INSTRUCTIONS: dict[str, str] = {
         "guesswork."
     ),
 }
+
+
+def task_templates_sha256() -> str:
+    """Content hash of the task framing (issue #8 resume pin).
+
+    Answer-side results depend on this text exactly the way judge-side
+    results depend on the rubric — a resumed run must refuse to replay
+    answers that were generated under a different framing.
+    """
+    digest = hashlib.sha256()
+    for load_type in sorted(TASK_INSTRUCTIONS):
+        digest.update(load_type.encode("utf-8"))
+        digest.update(b"\x00")
+        digest.update(TASK_INSTRUCTIONS[load_type].encode("utf-8"))
+        digest.update(b"\x00")
+    return digest.hexdigest()
 
 
 def task_prompt(load_type: str, payload: str) -> str:

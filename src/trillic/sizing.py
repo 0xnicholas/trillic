@@ -1,6 +1,6 @@
 """Sizing math (issue #8): judge variance, effect size, required n.
 
-Pilot-ramp sizing (docs/evaluation.md 规模定案): run the pilot, measure the
+Pilot-ramp sizing (docs/evaluation.md, the pilot-ramp decision): run the pilot, measure the
 judge's score variance and the compression-harm effect size, then invert a
 one-sided z-test on the paired deltas to get the per-class sample count
 that separates the mean delta from zero:

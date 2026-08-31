@@ -25,8 +25,8 @@ from trillic.clients.gateway import GatewayClient
 from trillic.golden import GoldenItem
 from trillic.judge import judge_prompt, parse_judge_scores, rubric_sha256, score_of
 from trillic.quality import rounded_mean
-from trillic.resume import Replay, ResumeError
-from trillic.tasks import task_prompt
+from trillic.resume import Replay
+from trillic.tasks import task_prompt, task_templates_sha256
 
 # Per-row rounding matches rounded_mean's 4-decimal metrics caliber.
 _ROUND = 4
@@ -70,6 +70,7 @@ class TaskQualityLoop:
                 answer_model=answer_model,
                 judge_model=judge_model,
                 rubric_sha256=rubric_sha256(),
+                task_templates_sha256=task_templates_sha256(),
             )
         self._originals: dict[str, dict] | None = None
         self._stats = {"answers_fresh": 0, "answers_reused": 0, "judges_fresh": 0, "judges_reused": 0}

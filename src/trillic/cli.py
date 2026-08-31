@@ -28,7 +28,6 @@ from trillic.report import ReportWriterError
 from trillic.resume import ResumeError
 from trillic.runner import run_eval
 from trillic.sizing import sizing_report
-from trillic.task_quality import TaskQualityError
 from trillic.sysprompt import (
     SysPromptError,
     build_sysprompt_entries,
@@ -74,6 +73,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sizing_parser.add_argument(
         "--run", required=True, type=Path, help="run directory (with metrics.json)"
+    )
+    sizing_parser.add_argument(
+        "--level", type=float, default=None,
+        help="restrict sizing to one sweep level (recommended on multi-level "
+        "runs: pooling levels mixes heterogeneous effects)",
     )
     sizing_parser.add_argument(
         "--out", type=Path, default=None, help="optional JSON output path"
@@ -248,7 +252,7 @@ def _eval_run(args: argparse.Namespace) -> int:
         run_dir = run_eval(
             config=config,
             config_path=args.config,
-            golden_path=args.golden if len(args.golden) > 1 else args.golden[0],
+            golden_path=list(args.golden),
             out_root=args.out,
             resume_from=args.resume_from,
         )
@@ -288,9 +292,19 @@ def _eval_sizing(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return _ERROR_EXIT_CODE
+    levels = metrics.get("metrics", {}).get("levels", [])
+    if args.level is not None:
+        levels = [lv for lv in levels if lv.get("aggressiveness") == args.level]
+        if not levels:
+            print(
+                f"error: the run has no level {args.level} — "
+                f"levels present: {[lv.get('aggressiveness') for lv in metrics.get('metrics', {}).get('levels', [])]}",
+                file=sys.stderr,
+            )
+            return _ERROR_EXIT_CODE
     rows = [
         row
-        for level in metrics.get("metrics", {}).get("levels", [])
+        for level in levels
         for row in level.get("aggregate", {}).get("task_quality", {}).get("items", [])
     ]
     if not rows:
@@ -307,15 +321,19 @@ def _eval_sizing(args: argparse.Namespace) -> int:
 
 def _print_sizing(report: dict) -> None:
     overall = report["overall"]
-    print(
-        f"overall: n={overall['n_observed']}, "
-        f"mean delta {overall['mean_delta']:+.4f}, "
-        f"std {overall['std_delta']:.4f}, "
-        f"Cohen's d {overall['cohens_d'] if overall['cohens_d'] is not None else float('nan'):+.4f}"
-        if overall["cohens_d"] is not None
-        else f"overall: n={overall['n_observed']}, mean delta {overall['mean_delta']:+.4f}, "
-        f"std {overall['std_delta']:.4f}, Cohen's d undefined"
-    )
+    if overall["cohens_d"] is not None:
+        print(
+            f"overall: n={overall['n_observed']}, "
+            f"mean delta {overall['mean_delta']:+.4f}, "
+            f"std {overall['std_delta']:.4f}, "
+            f"Cohen's d {overall['cohens_d']:+.4f}"
+        )
+    else:
+        print(
+            f"overall: n={overall['n_observed']}, "
+            f"mean delta {overall['mean_delta']:+.4f}, "
+            f"std {overall['std_delta']:.4f}, Cohen's d undefined"
+        )
     required = (
         f"required n per class ≈ {overall['n_required']} "
         f"(raw {overall['n_required_raw']:.2f})"

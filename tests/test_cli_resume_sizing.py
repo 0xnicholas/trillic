@@ -156,6 +156,25 @@ class TestEvalSizing:
         assert "overall" in report
         assert report["overall"]["n_required"] >= 1
 
+    def test_sizing_level_filter_selects_one_level(self, tmp_path):
+        config = tmp_path / "sweep.toml"
+        config.write_text(
+            'name = "sw"\n\n[run]\nlevels = [0.2, 0.4]\n', encoding="utf-8"
+        )
+        metrics, run_dir = run(tmp_path, config=config)
+        code = main(["eval", "sizing", "--run", str(run_dir), "--level", "0.4"])
+        assert code == 0
+
+    def test_sizing_unknown_level_is_rejected(self, tmp_path, capsys):
+        config = tmp_path / "sweep.toml"
+        config.write_text(
+            'name = "sw"\n\n[run]\nlevels = [0.2]\n', encoding="utf-8"
+        )
+        _, run_dir = run(tmp_path, config=config)
+        code = main(["eval", "sizing", "--run", str(run_dir), "--level", "0.9"])
+        assert code == 1
+        assert "0.9" in capsys.readouterr().err
+
     def test_sizing_on_qualityless_run_is_rejected(self, tmp_path, capsys):
         config = tmp_path / "noq.toml"
         config.write_text(
