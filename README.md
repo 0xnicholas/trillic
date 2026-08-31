@@ -52,8 +52,17 @@ uv run trillic eval run \
   换基底只改配置 `[metrics]` 不改代码);fact recall 与 token F0.5 为纯函数,
   口径与运行时 guardrail 同源(`_FACT_PATTERN` 逐字复用;F0.5 同公式、
   恒等对齐替代 embedding,harness 不带模型运行时);`[run] levels` 扫档
-  0.1–0.5 每档一节;sidecar 调用逐条计时,p50/p95 按档入报告;任务级
-  质量为结构占位(issue #7 填充)。假桩下全链路可演示。
+  0.1–0.5 每档一节;sidecar 调用逐条计时,p50/p95 按档入报告。假桩下全链
+  路可演示。
+- **任务级质量 + judge + bootstrap**(issue #7):三类负载按 load_type
+  分派下游任务(RAG 问答 / system prompt 约束遵守 / 对话记忆),原文与
+  压缩后两份 prompt 经网关各作答一次,LLM judge 按 key_points 逐点 0/1
+  打分(条分 = 覆盖率);质量 delta = 压缩后 − 原文,paired bootstrap
+  (按 prompt 重采样,种子化 10k 次)95% CI 与“下界不为负”判据进报告;
+  judge rubric 版本化(版本号 + 全文 sha256 进报告),judge 与作答模型
+  钉死在 `[quality]` 配置段;bootstrap 为纯函数,种子化字面量单测钉死
+  数值。stub 网关回显作答 + 机检打分,假桩下压缩只降分(方向性可验
+  证);原文作答每 run 只算一次,扫档不加价。
 - **golden 工具族**(`trillic golden *`,issue #3):schema v2(含 load_type
   与 source 溯源)校验、LongBench 切分/许可 manifest、种子化 RAG 起草。
   切分纪律:内容寻址半分(sha1 排序,前 ceil(n/2) 为 eval 半),golden
@@ -95,5 +104,5 @@ uv run trillic eval run \
 
 阶段 1(评测基线)进行中:评测 harness walking skeleton(#2)、Golden
 骨架 + RAG pilot(#3)、system prompt pilot(#4)、多轮对话 pilot(#5)、
-指标全集 + 扫档 + 延迟(#6)已落地;任务级质量 + judge + bootstrap、
+指标全集 + 扫档 + 延迟(#6)、任务级质量 + judge + bootstrap(#7)已落地;
 真链路冒烟与双 checkpoint 基线见后续子票。

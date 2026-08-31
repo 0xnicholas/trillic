@@ -33,9 +33,11 @@ def write_run_dir(out_root: Path, metrics: dict, report_md: str) -> Path:
 def render_report_md(metrics: dict) -> str:
     """Human-readable summary of a run (markdown, one section per sweep
     level, all four metric slots: dual-caliber compression, fact recall,
-    token F0.5, latency — plus the task-quality placeholder)."""
+    token F0.5, latency — plus task-level quality: judged scores, delta,
+    and the bootstrap CI)."""
     m = metrics["metrics"]
     sidecar = metrics["sidecar"]
+    task_quality = metrics.get("task_quality", {"enabled": False})
     lines = [
         f"# Eval run {metrics['run_id']}",
         "",
@@ -52,8 +54,9 @@ def render_report_md(metrics: dict) -> str:
         f" + native `{m['native_caliber']}`"
         " (compression_ratio = fraction removed; kept_ratio = retention)",
         f"- sweep levels: {', '.join(str(lv['aggressiveness']) for lv in m['levels'])}",
-        "",
     ]
+    lines += _task_quality_header_lines(task_quality)
+    lines.append("")
     for level in m["levels"]:
         lines += _render_level_section(level, sidecar)
     lines += [
@@ -68,6 +71,23 @@ def render_report_md(metrics: dict) -> str:
         "",
     ]
     return "\n".join(lines)
+
+
+def _task_quality_header_lines(task_quality: dict) -> list[str]:
+    """Provenance lines for the judge loop (issue #7): pinned models and
+    the versioned rubric hash go in every report that graded answers."""
+    if not task_quality.get("enabled"):
+        return ["- task quality: disabled (quality.task_quality = false)"]
+    bootstrap = task_quality["bootstrap"]
+    return [
+        f"- task quality: judge {task_quality['judge_model']}"
+        f" (rubric v{task_quality['judge_rubric_version']}"
+        f" sha256 `{task_quality['judge_rubric_sha256'][:12]}…`),"
+        f" answer model {task_quality['answer_model']}",
+        f"- significance: {bootstrap['method']}, {bootstrap['n_resamples']}"
+        f" resamples, seed {bootstrap['seed']},"
+        f" {bootstrap['confidence']:.0%} CI",
+    ]
 
 
 def _render_level_section(level: dict, sidecar: dict) -> list[str]:
@@ -104,8 +124,42 @@ def _render_level_section(level: dict, sidecar: dict) -> list[str]:
         f"- mean fact recall: {agg['mean_fact_recall']:.4f},"
         f" mean token F0.5: {agg['mean_token_f05']:.4f}",
         f"- latency: {_latency_line(latency, agg['item_count'])}",
-        "- task-level quality: pending (issue #7 — LLM judge on key_points)",
+    ]
+    lines += _render_task_quality(agg["task_quality"])
+    lines.append("")
+    return lines
+
+
+def _render_task_quality(task_quality: dict | None) -> list[str]:
+    """Task-level quality block: per-item judged scores + delta table,
+    means, and the bootstrap CI the acceptance criterion reads."""
+    if task_quality is None:
+        return ["- task-level quality: disabled (quality.task_quality = false)"]
+    lines = [
         "",
+        "### Task quality (LLM judge on key_points)",
+        "",
+        "| id | load | original | compressed | delta |",
+        "|---|---|---|---|---|",
+    ]
+    for item in task_quality["items"]:
+        lines.append(
+            f"| {item['id']} | {item['load_type']}"
+            f" | {item['original_score']:.4f}"
+            f" | {item['compressed_score']:.4f}"
+            f" | {item['delta']:+.4f} |"
+        )
+    ci = task_quality["delta_ci95"]
+    verdict = "yes" if task_quality["ci_lower_bound_not_negative"] else "no"
+    lines += [
+        "",
+        f"- mean original {task_quality['mean_original_score']:.4f} →"
+        f" compressed {task_quality['mean_compressed_score']:.4f}"
+        f" (mean delta {task_quality['mean_delta']:+.4f})",
+        f"- delta 95% CI"
+        f" [{ci['low']:+.4f}, {ci['high']:+.4f}]"
+        f" (paired bootstrap, resample unit = prompt)",
+        f"- CI lower bound not negative: {verdict}",
     ]
     return lines
 

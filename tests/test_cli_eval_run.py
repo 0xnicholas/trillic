@@ -16,6 +16,8 @@ import tiktoken
 
 from trillic import __version__
 from trillic.cli import main
+from trillic.judge import rubric_sha256
+from trillic.tasks import TASK_INSTRUCTIONS
 
 ENCODING = tiktoken.get_encoding("cl100k_base")
 
@@ -106,7 +108,7 @@ class TestEvalRunHappyPath:
         assert self.metrics["golden"]["item_count"] == len(self.golden_rows)
 
     def test_metrics_schema_and_levels_structure(self):
-        assert self.metrics["schema_version"] == 2
+        assert self.metrics["schema_version"] == 3
         assert [lv["aggressiveness"] for lv in self.levels] == [0.2]
         assert self.metrics["metrics"]["native_caliber"] == "word"
 
@@ -211,10 +213,89 @@ class TestEvalRunHappyPath:
         assert latency["p95_seconds"] >= latency["p50_seconds"] >= 0
         assert latency["mean_seconds"] >= 0
 
-    def test_task_quality_placeholder_present(self):
-        """Issue #7 fills this in; the placeholder makes the fourth metric
-        slot structural now."""
-        assert self.level["aggregate"]["task_quality"] is None
+    def test_task_quality_end_to_end_under_stubs(self):
+        """Acceptance criterion 1: golden → two answers → judge → quality
+        delta + CI in the report, all under deterministic stubs."""
+        top = self.metrics["task_quality"]
+        assert top["enabled"] is True
+        assert top["answer_model"] == "stub-answerer"
+        assert top["judge_model"] == "stub-judge"
+        assert top["judge_rubric_version"] == "1"
+        assert top["judge_rubric_sha256"] == rubric_sha256()
+        assert top["bootstrap"]["n_resamples"] == 10_000
+        assert top["bootstrap"]["seed"] == 0
+        assert top["bootstrap"]["confidence"] == 0.95
+
+        block = self.level["aggregate"]["task_quality"]
+        assert block is not None
+        assert block["item_count"] == len(self.golden_rows)
+        ci = block["delta_ci95"]
+        assert ci["low"] <= block["mean_delta"] <= ci["high"]
+        assert block["ci_lower_bound_not_negative"] == (ci["low"] >= 0.0)
+
+    def test_task_quality_per_item_scores_recomputed_independently(self):
+        """Hand-check wiring: recompute original/compressed scores, deltas,
+        means, and the CI straight from the stubs, compare against
+        metrics.json — the E2E numbers are pinned, not just structural."""
+        from trillic.bootstrap import paired_bootstrap_ci
+        from trillic.clients.gateway import StubGatewayClient as StubGW
+        from trillic.judge import mechanical_coverage_score, score_of
+        from trillic.tasks import task_prompt
+
+        stub_gw = StubGW()
+
+        def answer(payload: str, load_type: str) -> str:
+            return stub_gw.chat("stub-answerer", task_prompt(load_type, payload)).content
+
+        def judge(points: list[str], text: str) -> float:
+            return score_of(
+                [mechanical_coverage_score(p, text) for p in points]
+            )
+
+        rows = {r["id"]: r for r in self.level["aggregate"]["task_quality"]["items"]}
+        deltas = []
+        for golden in self.golden_rows:
+            item = next(
+                i for i in self.level["items"] if i["id"] == golden["id"]
+            )
+            original = judge(golden["key_points"], answer(golden["prompt"], golden["load_type"]))
+            compressed = judge(
+                golden["key_points"],
+                answer(item["compressed_text"], golden["load_type"]),
+            )
+            row = rows[golden["id"]]
+            assert row["original_score"] == round(original, 4)
+            assert row["compressed_score"] == round(compressed, 4)
+            assert row["delta"] == round(compressed - original, 4)
+            deltas.append(row["delta"])
+
+        block = self.level["aggregate"]["task_quality"]
+        assert block["mean_delta"] == round(sum(deltas) / len(deltas), 4)
+        boot = paired_bootstrap_ci(deltas, n_resamples=10_000, seed=0)
+        assert block["delta_ci95"]["low"] == round(boot.ci_low, 4)
+        assert block["delta_ci95"]["high"] == round(boot.ci_high, 4)
+
+    def test_task_quality_dispatches_all_three_load_types(self):
+        """Acceptance criterion 2: the fixture set carries one item per load
+        type and every one of them is answered and judged (dispatch wired)."""
+        rows = self.level["aggregate"]["task_quality"]["items"]
+        points_by_id = {g["id"]: g["key_points"] for g in self.golden_rows}
+        assert {r["load_type"] for r in rows} == {"rag", "system_prompt", "dialogue"}
+        for row in rows:
+            assert row["original_answer"].startswith("[stub:stub-answerer]")
+            # the echo answer embeds the load-type task instruction
+            assert any(
+                instruction in row["original_answer"]
+                for instruction in TASK_INSTRUCTIONS.values()
+            )
+            assert len(row["original_judge_scores"]) == len(points_by_id[row["id"]])
+
+    def test_stub_compression_never_raises_judged_scores(self):
+        rows = self.level["aggregate"]["task_quality"]["items"]
+        for row in rows:
+            assert row["compressed_score"] <= row["original_score"]
+        block = self.level["aggregate"]["task_quality"]
+        assert block["mean_delta"] <= 0.0
 
     def test_report_md_covers_all_four_metric_slots(self):
         report = (self.run_dir / "report.md").read_text()
@@ -223,7 +304,8 @@ class TestEvalRunHappyPath:
         assert "f0.5" in report.lower()
         assert "p95" in report.lower()
         assert "word" in report  # native caliber named
-        assert "task-level quality" in report  # placeholder slot
+        assert "### Task quality (LLM judge on key_points)" in report
+        assert "CI lower bound not negative" in report
 
 
 class TestSweepRun:
@@ -262,6 +344,31 @@ class TestSweepRun:
         report = (self.run_dir / "report.md").read_text()
         for level in (0.1, 0.2, 0.3, 0.4, 0.5):
             assert f"## Level {level}" in report
+
+
+class TestTaskQualityDisabled:
+    """quality.task_quality = false: proxy metrics only; the structural
+    slot stays (None) and the report says disabled."""
+
+    @pytest.fixture(autouse=True)
+    def _run(self, tmp_path, fixture_golden_path):
+        config = tmp_path / "proxy-only.toml"
+        config.write_text(
+            'name = "proxy-only"\n\n[run]\naggressiveness = 0.2\n\n[quality]\ntask_quality = false\n',
+            encoding="utf-8",
+        )
+        self.run_dir = run_eval(tmp_path, config, fixture_golden_path)
+        self.metrics = load_metrics(self.run_dir)
+
+    def test_task_quality_blocks_mark_disabled(self):
+        assert self.metrics["task_quality"] == {"enabled": False}
+        for level in self.metrics["metrics"]["levels"]:
+            assert level["aggregate"]["task_quality"] is None
+
+    def test_report_states_disabled(self):
+        report = (self.run_dir / "report.md").read_text()
+        assert "disabled (quality.task_quality = false)" in report
+        assert "### Task quality" not in report
 
 
 class TestDeterminismAndImmutability:

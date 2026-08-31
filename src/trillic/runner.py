@@ -1,12 +1,15 @@
 """`eval run` orchestration: golden + config in, immutable run dir out.
 
-Scope (issues #2 + #6): compress every golden item through the (injectable)
-refine-sidecar client at every configured sweep level, measure compression
-in both token calibers (tiktoken billing + parameterized model-native),
-fact recall and token-alignment F0.5 (calibers shared with the runtime
-guardrail — see trillic.quality), and per-item refine latency with p50/p95
-per level, then write metrics.json + report.md. Task-level quality arrives
-with issue #7 on the same seams and is already a structural slot.
+Scope (issues #2 + #6 + #7): compress every golden item through the
+(injectable) refine-sidecar client at every configured sweep level, measure
+compression in both token calibers (tiktoken billing + parameterized
+model-native), fact recall and token-alignment F0.5 (calibers shared with
+the runtime guardrail — see trillic.quality), per-item refine latency with
+p50/p95 per level, and — since issue #7 — task-level quality: each load
+type's downstream task is answered through the gateway for BOTH the
+original and the compressed prompt, an LLM judge grades both answers
+against the golden key_points, and the level block carries the quality
+delta with a seeded paired-bootstrap 95% CI. metrics.json + report.md out.
 """
 
 import hashlib
@@ -16,6 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from trillic import __version__
+from trillic.bootstrap import DEFAULT_CONFIDENCE, METHOD
 from trillic.clients.gateway import GatewayClient, HttpGatewayClient, StubGatewayClient
 from trillic.clients.sidecar import (
     HttpRefineClient,
@@ -25,12 +29,14 @@ from trillic.clients.sidecar import (
 )
 from trillic.config import RunConfig
 from trillic.golden import GoldenItem, load_golden
+from trillic.judge import RUBRIC_VERSION, rubric_sha256
 from trillic.native_tokens import NativeCounter, build_native_counter
 from trillic.quality import fact_recall, percentile, text_token_f05
 from trillic.report import render_report_md, write_run_dir
+from trillic.task_quality import TaskQualityLoop
 from trillic.tokens import TokenCounter, compression_ratio, kept_ratio
 
-METRICS_SCHEMA_VERSION = 2
+METRICS_SCHEMA_VERSION = 3
 
 
 def build_refine_client(config: RunConfig) -> RefineClient:
@@ -66,15 +72,36 @@ def run_eval(config: RunConfig, config_path: Path, golden_path: Path, out_root: 
     sidecar = build_refine_client(config)
     levels = config.effective_levels()
 
+    task_loop = None
+    if config.task_quality:
+        task_loop = TaskQualityLoop(
+            build_gateway_client(config),
+            answer_model=config.answer_model,
+            judge_model=config.judge_model,
+            seed=config.seed,
+            n_resamples=config.bootstrap_samples,
+        )
+        # Originals are level-independent: answered + judged exactly once,
+        # so a sweep pays for them one time only.
+        task_loop.prime_originals(items)
+
     level_blocks = []
     refine_meta: list[tuple[GoldenItem, RefineResult, float]] = []
     for level in levels:
         refine_results = _refine_all(sidecar, items, config, level)
+        task_quality_block = (
+            task_loop.evaluate_level(
+                level, items, [result.refined_text for _, result, _ in refine_results]
+            )
+            if task_loop is not None
+            else None
+        )
         block, meta = _build_level_block(
             level=level,
             refine_results=refine_results,
             counter=counter,
             native=native,
+            task_quality=task_quality_block,
         )
         level_blocks.append(block)
         if not refine_meta:
@@ -120,6 +147,7 @@ def _build_level_block(
     refine_results: list[tuple[GoldenItem, RefineResult, float]],
     counter: TokenCounter,
     native: NativeCounter,
+    task_quality: dict | None,
 ) -> tuple[dict, list[tuple[GoldenItem, RefineResult, float]]]:
     """One sweep level: per-item rows + aggregate (four metric slots).
 
@@ -183,9 +211,10 @@ def _build_level_block(
             "p50_seconds": _nullable_round(percentile(latencies, 50)),
             "p95_seconds": _nullable_round(percentile(latencies, 95)),
         },
-        # Task-level quality (LLM judge on key_points) arrives with issue #7;
-        # the slot is structural so reports never silently lose the metric.
-        "task_quality": None,
+        # Task-level quality (LLM judge on key_points, issue #7): the
+        # numbers land here when quality.task_quality = true; None marks
+        # the loop disabled in config (structural slot — never missing).
+        "task_quality": task_quality,
     }
     return {
         "aggressiveness": level,
@@ -245,6 +274,7 @@ def _build_metrics(
             # in metrics.levels — no misleading "primary" here.
             "aggressiveness": levels[0] if len(levels) == 1 else None,
         },
+        "task_quality": _task_quality_meta(config),
         "metrics": {
             "tiktoken_encoding": counter.encoding_name,
             "native_caliber": native_caliber,
@@ -252,6 +282,27 @@ def _build_metrics(
         },
     }
     return metrics
+
+
+def _task_quality_meta(config: RunConfig) -> dict:
+    """Run-level task-quality provenance (issue #7): the pinned judge +
+    answer models and the versioned rubric identity, so two runs can never
+    be silently compared across grading behavior."""
+    if not config.task_quality:
+        return {"enabled": False}
+    return {
+        "enabled": True,
+        "answer_model": config.answer_model,
+        "judge_model": config.judge_model,
+        "judge_rubric_version": RUBRIC_VERSION,
+        "judge_rubric_sha256": rubric_sha256(),
+        "bootstrap": {
+            "method": METHOD,
+            "n_resamples": config.bootstrap_samples,
+            "seed": config.seed,
+            "confidence": DEFAULT_CONFIDENCE,
+        },
+    }
 
 
 def _run_id(config: RunConfig, config_raw: str, golden_bytes: bytes, created_at: str) -> str:

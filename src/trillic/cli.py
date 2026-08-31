@@ -22,6 +22,7 @@ from trillic.dialogue import (
     make_review as make_dialogue_review,
 )
 from trillic.golden import GoldenError, collect_golden_errors
+from trillic.judge import JudgeError
 from trillic.longbench import LongBenchError, build_manifest, build_rag_entries
 from trillic.report import ReportWriterError
 from trillic.runner import run_eval
@@ -32,6 +33,7 @@ from trillic.sysprompt import (
     load_families,
     make_review,
 )
+from trillic.task_quality import TaskQualityError
 
 _ERROR_EXIT_CODE = 1
 
@@ -233,6 +235,8 @@ def _eval_run(args: argparse.Namespace) -> int:
         GoldenError,
         RefineError,
         GatewayError,
+        JudgeError,
+        TaskQualityError,
         ReportWriterError,
         ValueError,
         OSError,

@@ -6,8 +6,10 @@ POST {base}/v1/chat/completions with a bearer service key that comes ONLY
 from the REFINE_SERVICE_KEY environment variable (never from config files),
 and the X-TC-Refine: false header so eval/judge calls are never refined.
 
-The gateway is not called by `eval run` yet (task-level quality arrives with
-issue #7); this module establishes the injectable seam now.
+Since issue #7 the stub speaks the judge protocol: prompts on the
+TRILLIC-JUDGE envelope get mechanically graded JSON back (deterministic,
+zero cost); everything else is echoed. That is what makes the task-quality
+loop end-to-end demonstrable with zero network.
 """
 
 import json
@@ -19,6 +21,12 @@ from trillic.clients.gateway import (
     GatewayError,
     HttpGatewayClient,
     StubGatewayClient,
+)
+from trillic.judge import (
+    JudgeError,
+    judge_prompt,
+    mechanical_judge_response,
+    parse_judge_scores,
 )
 
 COMPLETION_RESPONSE = {
@@ -103,3 +111,38 @@ class TestStubGatewayClient:
     def test_distinct_models_distinct_outputs(self):
         stub = StubGatewayClient()
         assert stub.chat(model="a", prompt="p") != stub.chat(model="b", prompt="p")
+
+    def test_judge_protocol_prompt_gets_graded_json_back(self):
+        """The issue #7 fake-stub seam: a judge-envelope prompt is graded
+        mechanically, and the reply parses with the real judge parser."""
+        key_points = ["refund window 14 business days", "late fee 1.5% monthly"]
+        answer = "The refund window is 14 business days. No fee details."
+        stub = StubGatewayClient()
+        result = stub.chat(model="stub-judge", prompt=judge_prompt(key_points, answer))
+        assert result.model == "stub-judge"
+        scores = parse_judge_scores(result.content, len(key_points))
+        assert scores == [
+            1,  # every significant word of the point is in the answer
+            0,  # "fee" / "1.5%" / "monthly" never appear
+        ]
+
+    def test_judge_stub_grades_content_not_noise(self):
+        stub = StubGatewayClient()
+        points = ["escalate after two failed suggestions"]
+        strict = stub.chat(model="m", prompt=judge_prompt(points, "I escalated.")).content
+        full = stub.chat(
+            model="m", prompt=judge_prompt(points, "escalate after two failed suggestions")
+        ).content
+        assert parse_judge_scores(strict, 1) == [0]
+        assert parse_judge_scores(full, 1) == [1]
+
+    def test_judge_stub_matches_mechanical_judge_reference(self):
+        stub = StubGatewayClient()
+        result = stub.chat(
+            model="m", prompt=judge_prompt(["a point"], "an answer")
+        )
+        assert result.content == mechanical_judge_response(["a point"], "an answer")
+
+    def test_malformed_judge_envelope_propagates_judge_error(self):
+        with pytest.raises(JudgeError):
+            StubGatewayClient().chat(model="m", prompt="TRILLIC-JUDGE/1 not json\nrest")

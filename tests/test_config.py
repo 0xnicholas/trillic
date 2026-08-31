@@ -137,6 +137,57 @@ class TestNativeTokenizerConfig:
             )
 
 
+class TestTaskQualityConfig:
+    """[quality] section (issue #7): task-level quality loop knobs — judge
+    and answer model pins, bootstrap size, and the off switch."""
+
+    def test_defaults_enable_the_loop_with_stub_labels(self):
+        config = RunConfig()
+        assert config.task_quality is True
+        assert config.answer_model == "stub-answerer"
+        assert config.judge_model == "stub-judge"
+        assert config.bootstrap_samples == 10_000
+
+    def test_quality_section_parses(self, tmp_path):
+        path = write_config(
+            tmp_path,
+            '[quality]\n'
+            'task_quality = false\n'
+            'answer_model = "gpt-x"\n'
+            'judge_model = "gpt-judge"\n'
+            'bootstrap_samples = 5000\n',
+        )
+        config = load_config(path)
+        assert config.task_quality is False
+        assert config.answer_model == "gpt-x"
+        assert config.judge_model == "gpt-judge"
+        assert config.bootstrap_samples == 5000
+
+    def test_unknown_quality_key_rejected(self, tmp_path):
+        with pytest.raises(ConfigError, match="judge_temperature"):
+            load_config(
+                write_config(
+                    tmp_path, '[quality]\njudge_temperature = 0.0\n'
+                )
+            )
+
+    @pytest.mark.parametrize(
+        "body, bad",
+        [
+            ('[quality]\ntask_quality = "yes"\n', "task_quality"),
+            ('[quality]\ntask_quality = 1\n', "task_quality"),
+            ('[quality]\nanswer_model = ""\n', "answer_model"),
+            ('[quality]\njudge_model = ""\n', "judge_model"),
+            ('[quality]\nbootstrap_samples = 0\n', "bootstrap_samples"),
+            ('[quality]\nbootstrap_samples = true\n', "bootstrap_samples"),
+            ('[quality]\nbootstrap_samples = 1.5\n', "bootstrap_samples"),
+        ],
+    )
+    def test_invalid_quality_values_rejected(self, tmp_path, body, bad):
+        with pytest.raises(ConfigError, match=bad):
+            load_config(write_config(tmp_path, body))
+
+
 class TestValidation:
     def test_unknown_key_is_rejected_by_name(self, tmp_path):
         path = write_config(tmp_path, "[sidecar]\nmode = \"stub\"\ntimeout = 30\n")

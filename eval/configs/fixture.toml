@@ -3,9 +3,11 @@
 # Modes:
 #   sidecar.mode = "stub"  -> deterministic in-process stub (zero network)
 #   sidecar.mode = "http"  -> real refine sidecar (POST {url}/refine)
-#   gateway.mode           -> same two modes; gateway is not called by
-#                             `eval run` yet (task-level quality arrives with
-#                             issue #7) but the injection seam is in place.
+#   gateway.mode           -> same two modes. Since issue #7 the gateway
+#                             carries the task-quality loop: downstream
+#                             answers + LLM judge. Stub gateway grades
+#                             mechanically (zero cost); "http" bills the
+#                             internal ledger and requires real model pins.
 #
 # Never put credentials in this file: the gateway service key is read from
 # the REFINE_SERVICE_KEY environment variable only.
@@ -28,3 +30,9 @@ compress = true
 [gateway]
 mode = "stub"
 url = "http://127.0.0.1:3005"
+
+[quality]
+task_quality = true
+answer_model = "stub-answerer"   # pin the REAL downstream model for http runs
+judge_model = "stub-judge"        # pin the REAL judge model for http runs
+bootstrap_samples = 10000         # seeded paired bootstrap resamples per level

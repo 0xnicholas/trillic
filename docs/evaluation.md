@@ -50,6 +50,21 @@ percentile(旧 benchmark 口径)。模型原生计数器参数化:`word` /
 `wordpiece` / `sentencepiece` 三 flavor(`[metrics]` 配置),换基底只改
 配置不改代码。
 
+口径注记(issue #7 落地):任务级质量闭环在假桩下端到端可演示——三类负载
+(RAG 问答 / system prompt 约束遵守 / 对话记忆)按 load_type 分派各自的下游
+任务指令,经网关客户端对原文与压缩后两份 prompt 各作答一次(同一任务框
+架,仅载荷不同),LLM judge 按 key_points 对两份答案独立打分(逐点 0/1,
+条分 = 覆盖率);质量 delta = 压缩后分 − 原文分,按 prompt 重采样(种子化
+10k 次)的 paired percentile bootstrap 给 95% CI,判据字段(CI 下界不为负)
+直接落报告。judge rubric 版本化:版本号 + rubric 全文的 sha256 进报告,措辞
+任何变动都会变哈希;judge 与下游作答模型钉死在配置(`[quality]` 段)并进
+报告。假桩语义:stub 网关对作答请求回显 prompt,对 judge 请求按机检规则
+(关键点全部有效词在答案中出现 = 1)打分——因此假桩下压缩只会降分,
+管线接线的方向性可验证;真实跑(http 模式)换真模型,零代码改动。
+bootstrap 的 RNG 口径:每抽一次下标消耗一次 `random.Random(seed).random()`
+(跨版本稳定的唯一生成器),CI 端点用与延迟 p95 同款的线性插值 percentile;
+测试用种子化字面量钉死数值,漂移即红。
+
 ## 验收标准
 
 微调模型 vs 公开 checkpoint(`llmlingua-2-bert-base-multilingual-cased-meetingbank`)

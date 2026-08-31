@@ -9,13 +9,26 @@ from trillic.report import ReportWriterError, render_report_md, write_run_dir
 
 def sample_metrics() -> dict:
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "run_id": "20260830T120000000000Z-fixture-abcdef12",
         "created_at": "2026-08-30T12:00:00+00:00",
         "harness": {"name": "trillic", "version": "0.1.0"},
         "config": {"raw": "name = \"x\"", "sha256": "0" * 64, "parsed": {"name": "x"}},
         "golden": {"sha256": "1" * 64, "item_count": 2},
         "sidecar": {"mode": "stub", "refine_model": "stub-refine", "aggressiveness": 0.2},
+        "task_quality": {
+            "enabled": True,
+            "answer_model": "stub-answerer",
+            "judge_model": "stub-judge",
+            "judge_rubric_version": "1",
+            "judge_rubric_sha256": "2" * 64,
+            "bootstrap": {
+                "method": "paired percentile bootstrap (resample prompts with replacement)",
+                "n_resamples": 10000,
+                "seed": 0,
+                "confidence": 0.95,
+            },
+        },
         "metrics": {
             "tiktoken_encoding": "cl100k_base",
             "native_caliber": "word",
@@ -57,7 +70,31 @@ def sample_metrics() -> dict:
                         "mean_fact_recall": 0.875,
                         "mean_token_f05": 0.75,
                         "latency": {"mean_seconds": 0.015, "p50_seconds": 0.015, "p95_seconds": 0.0195},
-                        "task_quality": None,
+                        "task_quality": {
+                            "aggressiveness": 0.2,
+                            "item_count": 2,
+                            "mean_original_score": 1.0,
+                            "mean_compressed_score": 0.5,
+                            "mean_delta": -0.5,
+                            "delta_ci95": {"low": -0.75, "high": -0.25},
+                            "ci_lower_bound_not_negative": False,
+                            "items": [
+                                {"id": "a", "load_type": "rag",
+                                 "original_score": 1.0, "compressed_score": 0.5,
+                                 "delta": -0.5,
+                                 "original_judge_scores": [1, 1],
+                                 "compressed_judge_scores": [0, 1],
+                                 "original_answer": "...",
+                                 "compressed_answer": "..."},
+                                {"id": "b", "load_type": "dialogue",
+                                 "original_score": 1.0, "compressed_score": 0.5,
+                                 "delta": -0.5,
+                                 "original_judge_scores": [1],
+                                 "compressed_judge_scores": [0],
+                                 "original_answer": "...",
+                                 "compressed_answer": "..."},
+                            ],
+                        },
                     },
                 }
             ],
@@ -95,4 +132,28 @@ class TestRenderReport:
         assert "fact recall" in report and "F0.5" in report
         assert "p95" in report
         assert "native" in report and "word" in report
-        assert "task-level quality: pending" in report
+
+    def test_report_renders_task_quality_provenance_and_numbers(self):
+        report = render_report_md(sample_metrics())
+        # provenance: pinned models + versioned rubric hash + bootstrap params
+        assert "stub-judge" in report
+        assert "stub-answerer" in report
+        assert "rubric v1" in report
+        assert "222222222222" in report  # rubric sha256 prefix
+        assert "10000 resamples" in report
+        assert "95% CI" in report
+        # numbers: per-item table + means + CI + acceptance verdict
+        assert "### Task quality (LLM judge on key_points)" in report
+        assert "| a | rag | 1.0000 | 0.5000 | -0.5000 |" in report
+        assert "| b | dialogue | 1.0000 | 0.5000 | -0.5000 |" in report
+        assert "mean original 1.0000" in report
+        assert "[-0.7500, -0.2500]" in report
+        assert "CI lower bound not negative: no" in report
+
+    def test_report_renders_disabled_task_quality(self):
+        metrics = sample_metrics()
+        metrics["task_quality"] = {"enabled": False}
+        metrics["metrics"]["levels"][0]["aggregate"]["task_quality"] = None
+        report = render_report_md(metrics)
+        assert "disabled (quality.task_quality = false)" in report
+        assert "### Task quality" not in report

@@ -18,6 +18,11 @@ from typing import Any, Protocol
 
 import httpx
 
+from trillic.judge import (
+    mechanical_judge_response,
+    split_judge_prompt,
+)
+
 SERVICE_KEY_ENV = "REFINE_SERVICE_KEY"
 
 
@@ -96,8 +101,22 @@ def _parse_completion(data: object, model: str) -> ChatResult:
 
 
 class StubGatewayClient:
-    """Deterministic in-process stand-in for the gateway (zero cost, zero network)."""
+    """Deterministic in-process stand-in for the gateway (zero cost, zero
+    network).
+
+    Two behaviors (issue #7):
+    - prompts on the judge protocol (TRILLIC-JUDGE envelope) are graded
+      mechanically via trillic.judge — the reply is real judge-protocol
+      JSON, so the whole task-quality loop runs end-to-end on stubs;
+    - every other prompt is echoed back prefixed with the model name
+      (the deterministic "answering" behavior).
+    """
 
     def chat(self, model: str, prompt: str) -> ChatResult:
-        content = f"[stub:{model}] {prompt}"
+        judged = split_judge_prompt(prompt)
+        if judged is not None:
+            key_points, answer = judged
+            content = mechanical_judge_response(key_points, answer)
+        else:
+            content = f"[stub:{model}] {prompt}"
         return ChatResult(content=content, model=model, usage=None)

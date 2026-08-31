@@ -30,6 +30,10 @@ class RunConfig:
     gateway_url: str = "http://127.0.0.1:3005"
     native_flavor: str = "word"
     native_vocab: str | None = None
+    task_quality: bool = True
+    answer_model: str = "stub-answerer"
+    judge_model: str = "stub-judge"
+    bootstrap_samples: int = 10_000
 
     def snapshot(self) -> dict:
         return asdict(self)
@@ -53,6 +57,12 @@ _SECTION_FIELDS: dict[str, dict[str, str]] = {
     },
     "gateway": {"mode": "gateway_mode", "url": "gateway_url"},
     "metrics": {"native_flavor": "native_flavor", "native_vocab": "native_vocab"},
+    "quality": {
+        "task_quality": "task_quality",
+        "answer_model": "answer_model",
+        "judge_model": "judge_model",
+        "bootstrap_samples": "bootstrap_samples",
+    },
 }
 _NATIVE_FLAVORS = ("word", "wordpiece", "sentencepiece")
 _SWEEP_MAX = 0.5  # phase-1 sweep scope (docs/evaluation.md: 0.1-0.5)
@@ -110,6 +120,7 @@ def _validate(config: RunConfig, path: Path) -> None:
         )
     _validate_levels(config, path)
     _validate_native_tokenizer(config, path)
+    _validate_task_quality(config, path)
     if config.sidecar_mode not in ("stub", "http"):
         raise ConfigError(
             f"{path}: sidecar.mode must be 'stub' or 'http', got {config.sidecar_mode!r}"
@@ -122,6 +133,31 @@ def _validate(config: RunConfig, path: Path) -> None:
         raise ConfigError(
             f"{path}: sidecar.rewrite and sidecar.compress cannot both be false "
             "(the refine endpoint rejects that request)"
+        )
+
+
+def _validate_task_quality(config: RunConfig, path: Path) -> None:
+    """[quality] knobs (issue #7). The stub-labeled model defaults are
+    deliberate: in stub mode they are just deterministic labels, and in
+    http mode the real gateway rejects unknown model ids loudly — a
+    forgotten pin fails the run, never silently grades with a mystery
+    model."""
+    if not isinstance(config.task_quality, bool):
+        raise ConfigError(
+            f"{path}: quality.task_quality must be a boolean, got {config.task_quality!r}"
+        )
+    for label, model in (
+        ("answer_model", config.answer_model),
+        ("judge_model", config.judge_model),
+    ):
+        if not isinstance(model, str) or not model.strip():
+            raise ConfigError(
+                f"{path}: quality.{label} must be a non-empty string, got {model!r}"
+            )
+    samples = config.bootstrap_samples
+    if isinstance(samples, bool) or not isinstance(samples, int) or samples < 1:
+        raise ConfigError(
+            f"{path}: quality.bootstrap_samples must be an integer >= 1, got {samples!r}"
         )
 
 
