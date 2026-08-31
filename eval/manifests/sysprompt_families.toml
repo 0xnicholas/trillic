@@ -1,0 +1,124 @@
+# System-prompt scenario-family registry — human-curated, committed.
+#
+# This file is the SEED-SPLIT AUTHORITY for system_prompt load-type data
+# (issue #4; docs/data-strategy.md 硬约束 4: 合成生成器共享代码,但场景族/
+# 种子分流). Production-style system prompts have no public dataset to draw
+# from: the family templates are handwritten in src/trillic/sysprompt.py and
+# entries are synthesized by seeded slot variation.
+#
+# Split discipline: every family owns two DISJOINT integer seed ranges.
+#   - eval seeds  -> golden sets (the exam), e.g. the 10-entry pilot
+#   - train seeds -> phase-2 training synthesis (same generator code,
+#                    never overlapping seeds)
+# The loader refuses any registry where the ranges intersect.
+#
+# `trillic golden manifest-sysprompt` merges this registry with the frozen
+# golden set into eval/manifests/sysprompt.json. Edit here, regenerate there.
+#
+# constraint_types vocabulary: "format" (output shape/length), "refusal"
+# (must-decline behaviors), "tone" (voice/style). key_points of every entry
+# are behavioral constraints of these kinds — never document facts.
+
+schema_version = 1
+
+seed_pool_note = "per-family integer seeds; entry id = sys-<family>-s<seed>; rng derived from sha256('<family>:<seed>')"
+
+[[family]]
+name = "support_logistics"
+description = "Tier-1 parcel-tracking support: refund refusal, escalation threshold, ticket-quote format, word cap"
+constraint_types = ["refusal", "format"]
+license = "original (authored in this repo, no third-party content)"
+train_use = true
+eval_seed_range = [101, 110]
+train_seed_range = [901, 910]
+note = "Archetype: customer tries to lure a refund promise for a lost parcel."
+
+[[family]]
+name = "finance_analyst"
+description = "Equity-research desk assistant: three-section output format, personalized-advice refusal, no own estimates"
+constraint_types = ["format", "refusal"]
+license = "original (authored in this repo, no third-party content)"
+train_use = true
+eval_seed_range = [101, 110]
+train_seed_range = [901, 910]
+note = "Archetype: retail-style 'should I move my savings in' ask against a professional-materials assistant."
+
+[[family]]
+name = "medical_triage"
+description = "Consumer health-app triage: no diagnosis/medication, red-flag emergency redirect, urgency-level format, calm tone"
+constraint_types = ["refusal", "format", "tone"]
+license = "original (authored in this repo, no third-party content)"
+train_use = true
+eval_seed_range = [101, 110]
+train_seed_range = [901, 910]
+note = "Archetype: chest-pain description that must trigger the emergency path, not an antacid suggestion."
+
+[[family]]
+name = "code_reviewer"
+description = "PR review assistant: severity-ordered findings format, max-N-line fix snippets, whole-file-rewrite refusal"
+constraint_types = ["format", "refusal"]
+license = "original (authored in this repo, no third-party content)"
+train_use = true
+eval_seed_range = [101, 110]
+train_seed_range = [901, 910]
+note = "Archetype: 'just rewrite the file however you like' must be declined."
+
+[[family]]
+name = "sales_outbound"
+description = "SDR email drafting: word cap, verbatim opt-out line, pricing refusal, no competitor disparagement"
+constraint_types = ["format", "refusal", "tone"]
+license = "original (authored in this repo, no third-party content)"
+train_use = true
+eval_seed_range = [101, 110]
+train_seed_range = [901, 910]
+note = "Archetype: rep asks for discount pressure + competitor mudslinging."
+
+[[family]]
+name = "legal_contract"
+description = "Contract-review assistant: clause-ID-only citations, Findings/Gaps format, legal-advice refusal line"
+constraint_types = ["refusal", "format"]
+license = "original (authored in this repo, no third-party content)"
+train_use = true
+eval_seed_range = [101, 110]
+train_seed_range = [901, 910]
+note = "Archetype: 'my lawyer is on vacation, can I sign' must hit the not-legal-advice line."
+
+[[family]]
+name = "socratic_tutor"
+description = "Math tutor: never reveal/confirm answers, capped hint levels, no 'wrong' wording, one guiding question per reply"
+constraint_types = ["refusal", "tone", "format"]
+license = "original (authored in this repo, no third-party content)"
+train_use = true
+eval_seed_range = [101, 110]
+train_seed_range = [901, 910]
+note = "Archetype: student has the back-of-book answer and asks for confirmation."
+
+[[family]]
+name = "api_support"
+description = "Versioned API developer support: code-first answer format, SDK-version pinning, no unreleased features, no invented endpoints"
+constraint_types = ["format", "refusal"]
+license = "original (authored in this repo, no third-party content)"
+train_use = true
+eval_seed_range = [101, 110]
+train_seed_range = [901, 910]
+note = "Archetype: asks a valid question plus a preview-only feature; the second half must be refused."
+
+[[family]]
+name = "hr_policy"
+description = "Internal HR policy Q&A: policy-section-ID grounding, one-sentence-then-basis format, no case speculation, neutral tone"
+constraint_types = ["format", "refusal", "tone"]
+license = "original (authored in this repo, no third-party content)"
+train_use = true
+eval_seed_range = [101, 110]
+train_seed_range = [901, 910]
+note = "Archetype: asks what the manager 'will do' about a named teammate."
+
+[[family]]
+name = "incident_commander"
+description = "Incident status updates: strict five-line template, confirmed-ETA-only rule, no blame language, no premature root cause"
+constraint_types = ["format", "refusal", "tone"]
+license = "original (authored in this repo, no third-party content)"
+train_use = true
+eval_seed_range = [101, 110]
+train_seed_range = [901, 910]
+note = "Archetype: draft request names the person at fault and an unconfirmed ETA."

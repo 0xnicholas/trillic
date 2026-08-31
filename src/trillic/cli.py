@@ -17,6 +17,12 @@ from trillic.golden import GoldenError, collect_golden_errors
 from trillic.longbench import LongBenchError, build_manifest, build_rag_entries
 from trillic.report import ReportWriterError
 from trillic.runner import run_eval
+from trillic.sysprompt import (
+    SysPromptError,
+    build_sysprompt_entries,
+    build_sysprompt_manifest,
+    load_families,
+)
 
 _ERROR_EXIT_CODE = 1
 
@@ -80,6 +86,36 @@ def build_parser() -> argparse.ArgumentParser:
     build_parser.add_argument("--min-tokens", type=int, default=500)
     build_parser.add_argument("--max-tokens", type=int, default=4000)
     build_parser.add_argument("--out", required=True, type=Path)
+
+    sysprompt_manifest_parser = golden_sub.add_parser(
+        "manifest-sysprompt",
+        help="generate the system-prompt family seed-split manifest",
+    )
+    sysprompt_manifest_parser.add_argument(
+        "--families", required=True, type=Path,
+        help="scenario-family registry (TOML: seed pools + licenses per family)",
+    )
+    sysprompt_manifest_parser.add_argument(
+        "--golden", type=Path, default=None,
+        help="frozen golden jsonl to verify against regeneration and record",
+    )
+    sysprompt_manifest_parser.add_argument(
+        "--out", required=True, type=Path, help="output manifest JSON path"
+    )
+
+    sysprompt_build_parser = golden_sub.add_parser(
+        "build-sysprompt",
+        help="seeded synthesis of system_prompt golden entries (eval seeds only)",
+    )
+    sysprompt_build_parser.add_argument(
+        "--families", required=True, type=Path,
+        help="scenario-family registry (TOML)",
+    )
+    sysprompt_build_parser.add_argument(
+        "--seeds", required=True,
+        help="family=seed pairs, e.g. support_logistics=101,finance_analyst=101",
+    )
+    sysprompt_build_parser.add_argument("--out", required=True, type=Path)
     return parser
 
 
@@ -97,7 +133,17 @@ def main(argv: list[str] | None = None) -> int:
                 return _golden_manifest(args)
             if args.golden_command == "build-rag":
                 return _golden_build_rag(args)
-        except (GoldenError, LongBenchError, ValueError, OSError) as e:
+            if args.golden_command == "manifest-sysprompt":
+                return _golden_manifest_sysprompt(args)
+            if args.golden_command == "build-sysprompt":
+                return _golden_build_sysprompt(args)
+        except (
+            GoldenError,
+            LongBenchError,
+            SysPromptError,
+            ValueError,
+            OSError,
+        ) as e:
             print(f"error: {e}", file=sys.stderr)
             return _ERROR_EXIT_CODE
 
@@ -173,5 +219,36 @@ def _golden_build_rag(args: argparse.Namespace) -> int:
     args.out.write_text(
         "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in entries), encoding="utf-8"
     )
-    print(f"{args.out}: {len(entries)} entries (draft — hand-prune key_points before freezing)")
+    print(f"{args.out}: {len(entries)} entries (draft — hand-review before freezing)")
+    return 0
+
+
+def _golden_manifest_sysprompt(args: argparse.Namespace) -> int:
+    families = load_families(args.families)
+    manifest = build_sysprompt_manifest(families, golden_path=args.golden)
+    args.out.write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    pilot = f", pilot: {manifest['pilot']['entries']} entries verified" if "pilot" in manifest else ""
+    print(f"{args.out}: {len(manifest['families'])} families{pilot}")
+    return 0
+
+
+def _golden_build_sysprompt(args: argparse.Namespace) -> int:
+    families = load_families(args.families)
+    seed_plan: dict[str, list[int]] = {}
+    for part in str(args.seeds).split(","):
+        name, _, value = part.strip().partition("=")
+        if not name or not value:
+            raise ValueError(f"bad --seeds item {part!r} (expected family=seed)")
+        seed_plan.setdefault(name, []).append(int(value))
+    entries = build_sysprompt_entries(families, seed_plan)
+    args.out.write_text(
+        "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in entries),
+        encoding="utf-8",
+    )
+    print(
+        f"{args.out}: {len(entries)} entries (eval seeds only — "
+        "hand-review, then freeze via manifest-sysprompt --golden)"
+    )
     return 0

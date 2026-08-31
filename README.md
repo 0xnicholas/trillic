@@ -56,6 +56,15 @@ uv run trillic eval run \
   qasper / hotpotqa / gov_report,种子 20260831,逐条许可与 split 溯源
   (见 `eval/manifests/longbench.json`);key_points 自数据集标注派生后
   人工修剪。
+- **system prompt pilot**(issue #4):生产风格系统提示无公开数据集可抄——
+  10 个手写场景族模板(`src/trillic/sysprompt.py`)+ 种子化槽位合成。
+  种子分流硬约束(data-strategy 硬约束 4):每族两个不相交整数种子池
+  (eval 101–110 / train 901–910),golden 只用 eval 种子,训练侧共用
+  生成器代码但永不交叉;分流权威在 `eval/manifests/sysprompt_families.toml`,
+  生成记录在 `eval/manifests/sysprompt.json`(含 pilot 冻结校验:逐条
+  content_sha1 对重生成比对,漂移即拒)。golden 文件
+  `eval/golden/sysprompt_pilot.jsonl`(10 条,key_points 全部为行为约束型:
+  格式/拒绝/语气,激活用户消息内嵌于 prompt)。
 - **假桩注入**:sidecar(POST /refine)与网关客户端均为可注入协议,
   配置 `mode = "stub" | "http"` 切换;全部测试零网络。
 - **离线 tiktoken**:测试通过仓内缓存(`eval/assets/tiktoken_cache/`)
@@ -67,6 +76,6 @@ uv run trillic eval run \
 
 ## 状态
 
-阶段 1(评测基线)进行中:评测 harness walking skeleton(#2)与
-Golden 骨架 + RAG pilot(#3)已落地;system prompt / 多轮对话 pilot、
+阶段 1(评测基线)进行中:评测 harness walking skeleton(#2)、Golden
+骨架 + RAG pilot(#3)、system prompt pilot(#4)已落地;多轮对话 pilot、
 指标全集与任务级质量见后续子票。

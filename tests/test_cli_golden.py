@@ -1,12 +1,17 @@
-"""`trillic golden *` CLI: validate / manifest / build-rag.
+"""`trillic golden *` CLI: validate / manifest / build-rag / sysprompt family.
 
 External behavior only: argv in, files + stdout/stderr + exit codes out.
 """
 
 import json
+from pathlib import Path
 
 from trillic.cli import main
 from trillic.longbench import build_manifest
+from trillic.sysprompt import load_families
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+FAMILIES_TOML = REPO_ROOT / "eval" / "manifests" / "sysprompt_families.toml"
 
 SOURCE = {
     "dataset": "handwritten", "subset": "test", "license": "original", "split": "eval",
@@ -116,3 +121,93 @@ class TestGoldenBuildRag:
 
         assert len(load_golden(out)) == 5
         capsys.readouterr()
+
+
+class TestGoldenManifestSysprompt:
+    def test_writes_manifest_with_pilot_record(self, tmp_path, capsys):
+        out = tmp_path / "sysprompt.json"
+        golden = tmp_path / "pilot.jsonl"
+        _write_pilot(golden)
+        args = [
+            "golden", "manifest-sysprompt",
+            "--families", str(FAMILIES_TOML),
+            "--golden", str(golden),
+            "--out", str(out),
+        ]
+        assert main(args) == 0
+        manifest = json.loads(out.read_text())
+        assert manifest["pilot"]["entries"] == 10
+        assert len(manifest["families"]) == 10
+        capsys.readouterr()
+
+    def test_manifest_without_golden_records_allocation_only(self, tmp_path):
+        out = tmp_path / "sysprompt.json"
+        assert main(
+            ["golden", "manifest-sysprompt", "--families", str(FAMILIES_TOML),
+             "--out", str(out)]
+        ) == 0
+        assert "pilot" not in json.loads(out.read_text())
+
+    def test_drifted_golden_errors(self, tmp_path, capsys):
+        golden = tmp_path / "drifted.jsonl"
+        _write_pilot(golden, tamper_first=True)
+        code = main(
+            ["golden", "manifest-sysprompt", "--families", str(FAMILIES_TOML),
+             "--golden", str(golden), "--out", str(tmp_path / "m.json")]
+        )
+        assert code == 1
+        assert "content_sha1" in capsys.readouterr().err
+
+
+class TestGoldenBuildSysprompt:
+    def test_builds_validated_golden_file_deterministically(self, tmp_path, capsys):
+        out = tmp_path / "draft.jsonl"
+        seeds = "support_logistics=101,finance_analyst=101"
+        args = [
+            "golden", "build-sysprompt",
+            "--families", str(FAMILIES_TOML),
+            "--seeds", seeds,
+            "--out", str(out),
+        ]
+        assert main(args) == 0
+        first = out.read_text()
+        assert main(args) == 0
+        assert out.read_text() == first
+        from trillic.golden import load_golden
+
+        items = load_golden(out)
+        assert [i.id for i in items] == [
+            "sys-support_logistics-s101",
+            "sys-finance_analyst-s101",
+        ]
+        capsys.readouterr()
+
+    def test_train_seed_plan_errors(self, tmp_path, capsys):
+        code = main(
+            ["golden", "build-sysprompt", "--families", str(FAMILIES_TOML),
+             "--seeds", "support_logistics=901", "--out", str(tmp_path / "d.jsonl")]
+        )
+        assert code == 1
+        assert "TRAIN seed" in capsys.readouterr().err
+
+    def test_bad_seeds_syntax_errors(self, tmp_path, capsys):
+        code = main(
+            ["golden", "build-sysprompt", "--families", str(FAMILIES_TOML),
+             "--seeds", "support_logistics", "--out", str(tmp_path / "d.jsonl")]
+        )
+        assert code == 1
+        assert "error" in capsys.readouterr().err
+
+
+def _write_pilot(path: Path, tamper_first: bool = False) -> None:
+    families = load_families(FAMILIES_TOML)
+    plan = {f["name"]: [f["eval_seed_range"][0]] for f in families}
+    from trillic.sysprompt import build_sysprompt_entries
+
+    entries = build_sysprompt_entries(families, plan)
+    if tamper_first:
+        entries[0]["prompt"] += " tampered tail"
+    path.write_text(
+        "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in entries),
+        encoding="utf-8",
+    )
