@@ -10,7 +10,7 @@ coverage drops).
 
 import pytest
 
-from trillic.clients.gateway import StubGatewayClient
+from trillic.clients.gateway import GatewayError, StubGatewayClient
 from trillic.clients.sidecar import StubRefineClient
 from trillic.golden import GoldenItem
 from trillic.judge import split_judge_prompt
@@ -376,3 +376,54 @@ class TestItemConcurrency:
         assert compressed == sorted(
             (i.id, 0.2) for i in ITEMS
         )
+
+
+class ContentFilterGateway(StubGatewayClient):
+    """glm's content moderation (2026-09-12): a specific ANSWER sample
+    trips "不安全或敏感内容"; a fresh answer sample passes. Input-side
+    is fine — the same item judged cleanly on the other lane."""
+
+    def __init__(self, bad_judge_replies: int):
+        self.bad = bad_judge_replies
+        self.seen = 0
+
+    def chat(self, model: str, prompt: str):
+        if "TRILLIC-JUDGE" in prompt and self.seen < self.bad:
+            self.seen += 1
+            raise GatewayError(
+                'gateway returned 400: {"error":{"message":"系统检测到输入或'
+                '生成内容可能包含不安全或敏感内容","code":"invalid_request"}}'
+            )
+        return super().chat(model, prompt)
+
+
+class TestJudgeContentFilterRetry:
+    def _loop(self, gateway):
+        return TaskQualityLoop(
+            gateway, answer_model="stub-answerer", judge_model="stub-judge",
+            seed=3, n_resamples=100,
+        )
+
+    def test_filtered_answer_sample_reanswered(self):
+        items = [GoldenItem(
+            id="rag-nuke", load_type="rag", prompt="context about WMD reports",
+            key_points=("proliferation concern",), source=SOURCE,
+        )]
+        gateway = ContentFilterGateway(bad_judge_replies=1)
+        loop = self._loop(gateway)
+        loop.prime_originals(items, golden_sha256="sha")
+        assert loop.call_stats()["content_filter_retries"] == 1
+        assert loop.call_stats()["answers_fresh"] == 2  # re-answered once
+
+    def test_persistent_filter_raises_with_item_id(self):
+        from trillic.task_quality import TaskQualityError
+
+        items = [GoldenItem(
+            id="rag-nuke", load_type="rag", prompt="context about WMD reports",
+            key_points=("proliferation concern",), source=SOURCE,
+        )]
+        gateway = ContentFilterGateway(bad_judge_replies=99)
+        loop = self._loop(gateway)
+        with pytest.raises(TaskQualityError, match="rag-nuke"):
+            loop.prime_originals(items, golden_sha256="sha")
+        assert gateway.seen == 3  # bounded: 1 + 2 re-asks

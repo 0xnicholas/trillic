@@ -21,7 +21,7 @@ from trillic.bootstrap import (
     METHOD,
     paired_bootstrap_ci,
 )
-from trillic.clients.gateway import GatewayClient
+from trillic.clients.gateway import GatewayClient, GatewayError
 from trillic.golden import GoldenItem
 from trillic.judge import (
     JudgeError,
@@ -53,6 +53,14 @@ class TaskQualityError(RuntimeError):
 # often enough that three attempts still died once per ~600 judged calls
 # (2026-09-12 full149 run).
 _JUDGE_PARSE_ATTEMPTS = 5
+
+# glm content moderation (2026-09-12): a specific ANSWER sample can trip
+# "不安全或敏感内容" (a 400, fail-fast at the transport layer) even when
+# the item's key points judge cleanly — re-answering (fresh sample) and
+# re-judging is bounded below; the input side is deterministic, so
+# persistent rejection means the item is unjudgeable under this judge.
+_CONTENT_FILTER_ATTEMPTS = 3
+_CONTENT_FILTER_MARKERS = ("不安全", "敏感", "sensitive")
 
 
 class TaskQualityLoop:
@@ -109,6 +117,7 @@ class TaskQualityLoop:
             "judges_fresh": 0,
             "judges_reused": 0,
             "judge_retries": 0,
+            "content_filter_retries": 0,
         }
         # Models the gateway REPORTS serving (the version of record for the
         # pin discipline — may differ from the requested pins when the
@@ -300,16 +309,37 @@ class TaskQualityLoop:
 
     def _answer_and_judge(self, item: GoldenItem, payload: str) -> dict:
         """Answer the load-type task for `payload`, judge against the
-        golden key_points. One answer call + one judge call (both billed)."""
+        golden key_points. One answer call + one judge call (both billed);
+        a content-filter rejection of the judge re-answers with a fresh
+        sample (bounded) — the answer text, not the exam, is what tripped."""
         key_points = list(item.key_points)
-        answered = self._gateway.chat(
-            self._answer_model, task_prompt(item.load_type, payload)
-        )
-        with self._lock:
-            self._served_answer_models.add(answered.model)
-            self._stats["answers_fresh"] += 1
-        judged = self._judge_with_retry(key_points, answered.content, item.id)
-        return {"answer": answered.content, "scores": judged, "score": score_of(judged)}
+        for attempt in range(_CONTENT_FILTER_ATTEMPTS):
+            answered = self._gateway.chat(
+                self._answer_model, task_prompt(item.load_type, payload)
+            )
+            with self._lock:
+                self._served_answer_models.add(answered.model)
+                self._stats["answers_fresh"] += 1
+            try:
+                judged = self._judge_with_retry(key_points, answered.content, item.id)
+            except GatewayError as e:
+                if any(marker in str(e) for marker in _CONTENT_FILTER_MARKERS):
+                    if attempt < _CONTENT_FILTER_ATTEMPTS - 1:
+                        with self._lock:
+                            self._stats["content_filter_retries"] += 1
+                        continue
+                    raise TaskQualityError(
+                        f"item {item.id!r}: judge rejected the content after "
+                        f"{_CONTENT_FILTER_ATTEMPTS} answer samples ({e}) — "
+                        "unjudgeable under this judge's content policy"
+                    ) from e
+                raise
+            return {
+                "answer": answered.content,
+                "scores": judged,
+                "score": score_of(judged),
+            }
+        raise TaskQualityError(f"item {item.id!r}: unreachable retry exhaustion")
 
     def _judge_with_retry(
         self, key_points: list[str], answer: str, item_id: str
