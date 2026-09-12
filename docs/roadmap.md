@@ -39,7 +39,9 @@ bear(The Token Company)框定能力面——抽取式本体 + query-aware 扩展
 - **双公开 checkpoint 基线**:现网 mBERT-base + 公开 XLM-R-large
   (零训练成本,只加推理);同时记录各 checkpoint 的压缩延迟(p95)。
 - **后手牌激活判据**:双基线显示 XLM-R-large 质量显著更高 **且** 延迟
-  可接受,"XLM-R-large 微调"升级点才激活。
+  可接受 **且** 接口相容(暴露 `.bert`,或以宿主配合改 `refiner.py` 为
+  前提),"XLM-R-large 微调"升级点才激活——XLM-R-large 的属性是
+  `.roberta`,现状下不是 drop-in(decisions.md §6)。
 - **冻结纪律**:golden set 在基线数字产出时冻结。之后只允许"扩充 +
   重跑基线",不允许改题——考卷跟着学生改,验收作废。
 - **判据**:同一 prompt 的原文/压缩后答案,同 judge 模型同 rubric,
@@ -95,12 +97,15 @@ bear(The Token Company)框定能力面——抽取式本体 + query-aware 扩展
 
 ### 阶段 5:交付
 
-- **产物包**(四件缺一不算交付):
-  1. HF 格式 checkpoint(与 LLMLingua-2 同接口);
+- **产物包**(五件缺一不算交付;第五件 2026-09-11 增补):
+  1. HF 格式 checkpoint(与 LLMLingua-2 同接口,须满足 decisions.md §6 的
+     drop-in 契约);
   2. model card 含数据溯源:基底 Apache-2.0、各语料子集许可与用途
      声明、合成数据自产声明、MeetingBank 排除声明;
   3. 对照报告(冻结版 golden set 上的验收数字);
-  4. 延迟档案(阶段 1 双基线顺带产出)。
+  4. 延迟档案(阶段 1 双基线顺带产出);
+  5. 接入包(`docs/delivery/refine-integration.md`):drop-in 契约校验清单 +
+     宿主改动 patch 草案 + 切换/观察/回滚 runbook + 非差异清单。
 - **延迟闸**:compress p95 ≤ 现网 checkpoint 的 1.2×。mBERT-base 同
   架构基底天然满足;此闸主要防后手牌场景(XLM-R-large 换底后延迟翻车)。
 - **发布动作归 tokencamp-pro 侧**(MODEL_ID 切换 + 其自身的 canary/
@@ -111,3 +116,16 @@ bear(The Token Company)框定能力面——抽取式本体 + query-aware 扩展
 - 日历排期(独立排期,带宽由项目所有者定);
 - golden set 编写方式、下游任务定义、judge rubric——阶段 1 的 spec
   材料,进入实现阶段再定。
+
+## 接入与供货(2026-09-11 增补)
+
+完整决策(替换实质、宿主改造集、交付与锁定、回归纪律、上线回滚、供货
+触发器、许可与断供性质)见 `decisions.md` §6;可执行细节(drop-in 契约、
+patch 草案、切换 runbook)见 `docs/delivery/refine-integration.md`。要点:
+
+- refine 只换 compress 阶段的权重,影响面限于 `rewrite_compress` 档;
+- 产物五件齐 + 判据通过(**持平 = 不替换**)才算"能替换";
+- 供货为触发式持续供货,无触发不交付;断供不影响 refine 运行与回滚。
+
+交付能力的工具实现见 #10(drop-in 契约校验 / 产物包打包 / 冻结引用断言);
+该票不阻塞在阶段 2/3/5 上,可先行完成。
