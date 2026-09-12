@@ -33,14 +33,14 @@ url = "http://127.0.0.1:9798"  # second sidecar instance, COMPRESSION_MODEL_ID=x
 [gateway]
 mode = "http"
 url = "http://127.0.0.1:3005"
-# proactive rate control: >= 6s between gateway call starts per lane
-min_call_interval = 6.0
+# proactive rate control: >= 3s between gateway call starts per lane
+min_call_interval = 3.0
 
 [quality]
 answer_model = "deepseek/deepseek-v4-pro"
 judge_model = "zhipu/glm-5.1"
 # item-level answer+judge workers: execution detail only, results identical
-concurrency = 2  # glm coding-plan rate ceiling: 2 workers/lane + 6s call spacing keeps judge pressure under the observed trip point
+concurrency = 4  # headroom: ~14 calls/min vs the ~35/min observed trip point
 
 [metrics]
 native_flavor = "sentencepiece"
