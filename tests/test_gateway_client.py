@@ -21,6 +21,8 @@ from trillic.clients.gateway import (
     GatewayError,
     HttpGatewayClient,
     StubGatewayClient,
+    _RATE_LIMIT_MAX_WAIT,
+    _RATE_LIMIT_RETRIES,
 )
 from trillic.judge import (
     JudgeError,
@@ -194,9 +196,9 @@ class TestGatewayRetry:
         with pytest.raises(GatewayError, match="unreachable"):
             client.chat(model="m", prompt="p")
 
-    def test_http_error_status_is_not_retried(self):
-        """4xx/5xx responses are deliberate gateway answers, not stalls —
-        no retry, fail fast with the body."""
+    def test_4xx_error_status_is_not_retried(self):
+        """4xx responses are deliberate gateway answers — no retry, fail
+        fast with the body."""
         calls = {"n": 0}
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -207,3 +209,72 @@ class TestGatewayRetry:
         with pytest.raises(GatewayError, match="no funds"):
             client.chat(model="m", prompt="p")
         assert calls["n"] == 1
+
+    def test_transient_upstream_5xx_is_retried(self):
+        """A 502 'upstream returned an internal error' killed a real
+        full-sweep run (2026-09-12): upstream 5xx/429 are transient, same
+        bounded-retry posture as transport stalls."""
+        calls = {"n": 0}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return httpx.Response(
+                    502, json={"error": {"message": "upstream internal error"}}
+                )
+            return httpx.Response(200, json=COMPLETION_RESPONSE)
+
+        client = make_client(handler, service_key="k")
+        result = client.chat(model="m", prompt="p")
+        assert calls["n"] == 2
+        assert result.content == "model answer"
+
+    def test_persistent_upstream_5xx_exhausts_retries(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(503, json={"error": {"message": "down"}})
+
+        client = make_client(handler, service_key="k")
+        with pytest.raises(GatewayError, match="503"):
+            client.chat(model="m", prompt="p")
+
+
+class TestSustainedOverloadBackoff:
+    """glm coding-plan saturation showed up as 503 'no candidate ... retry
+    later' / 'provider_overloaded' bursts that outlived 2 quick retries
+    (2026-09-12 full149 runs). Transient overload now gets a longer
+    exponential ladder so runs ride out the window instead of dying."""
+
+    def test_burst_of_overloads_then_success(self, monkeypatch):
+        sleeps: list[float] = []
+        monkeypatch.setattr("trillic.clients.gateway.time.sleep", lambda s: sleeps.append(s))
+        calls = {"n": 0}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls["n"] += 1
+            if calls["n"] <= 3:
+                return httpx.Response(
+                    503, json={"error": {"message": "no candidate; retry later"}}
+                )
+            return httpx.Response(200, json=COMPLETION_RESPONSE)
+
+        client = make_client(handler, service_key="k")
+        result = client.chat(model="m", prompt="p")
+        assert calls["n"] == 4
+        assert result.content == "model answer"
+        assert len(sleeps) == 3  # backed off between each overload
+
+    def test_overload_ladder_is_increasing(self, monkeypatch):
+        sleeps: list[float] = []
+        monkeypatch.setattr("trillic.clients.gateway.time.sleep", lambda s: sleeps.append(s))
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(503, json={"error": {"message": "overloaded"}})
+
+        client = make_client(handler, service_key="k")
+        with pytest.raises(GatewayError, match="503"):
+            client.chat(model="m", prompt="p")
+        # base ladder doubles until the cap (jitter adds < 1s per step)
+        assert len(sleeps) == _RATE_LIMIT_RETRIES
+        assert sleeps[0] >= 2.0
+        assert all(b - a > 0.5 for a, b in zip(sleeps[:4], sleeps[1:5]))
+        assert sleeps[-1] <= _RATE_LIMIT_MAX_WAIT + 1

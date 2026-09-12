@@ -4,9 +4,15 @@
 # above 0.3; this closes the gap).
 #
 # Gateway spend: 149 originals x (answer+judge) once + 5 levels x 149 x
-# (answer+judge) ~ 1.8k calls (deepseek answer + kimi judge, host ledger).
-# Judge pins kimi/kimi-k2 (different vendor from the answer model — avoids
-# self-preference; anthropic upstream key is a placeholder in this env).
+# (answer+judge) ~ 1.8k calls (deepseek answer + tokencamp/auto judge,
+# host ledger).
+# Judge pin (2026-09-12): kimi/kimi-k2 went down mid-run (persistent
+# upstream 5xx from ~14:20 CST); owner authorized the switch to
+# tokencamp/auto pre-freeze. Caveat: the router's underlying vendor is
+# opaque — served model ids are recorded per response in every report;
+# self-preference vs the deepseek answerer cannot be fully excluded
+# (anthropic upstream key is a placeholder in this env). Pilot30's
+# excerpt stays kimi-judged (historical record, different pin).
 #
 # Interruptions are safe: the crash journal under runs/.ledger/ replays
 # completed items on rerun (no re-billing). Latency is recorded per call
@@ -27,7 +33,9 @@ url = "http://127.0.0.1:3005"
 
 [quality]
 answer_model = "deepseek/deepseek-v4-pro"
-judge_model = "kimi/kimi-k2"
+judge_model = "zhipu/glm-5.1"
+# item-level answer+judge workers: execution detail only, results identical
+concurrency = 3  # glm coding-plan saturation: 6/dual-lane tripped 503s; 3/lane rides the long backoff ladder
 
 [metrics]
 native_flavor = "wordpiece"

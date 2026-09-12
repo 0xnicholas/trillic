@@ -34,6 +34,9 @@ from trillic.quality import rounded_mean
 from trillic.resume import CallJournal, Replay
 from trillic.tasks import task_prompt, task_templates_sha256
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
 # Per-row rounding matches rounded_mean's 4-decimal metrics caliber.
 _ROUND = 4
 
@@ -45,8 +48,11 @@ class TaskQualityError(RuntimeError):
 # A malformed judge reply (miscounted scores, stray prose) is sampling
 # noise from the judge model, not a protocol break: re-ask bounded times
 # before failing the run (mirrors the #8 transport-stall retry posture;
-# each attempt is honestly billed and counted in `judge_retries`).
-_JUDGE_PARSE_ATTEMPTS = 3
+# each attempt is honestly billed and counted in `judge_retries`). Five
+# attempts kept a real full-sweep alive: kimi miscounts ~6-point items
+# often enough that three attempts still died once per ~600 judged calls
+# (2026-09-12 full149 run).
+_JUDGE_PARSE_ATTEMPTS = 5
 
 
 class TaskQualityLoop:
@@ -69,12 +75,21 @@ class TaskQualityLoop:
         n_resamples: int,
         replay: Replay | None = None,
         journal: CallJournal | None = None,
+        concurrency: int = 1,
     ) -> None:
         self._gateway = gateway
         self._answer_model = answer_model
         self._judge_model = judge_model
         self._seed = seed
         self._n_resamples = n_resamples
+        if not isinstance(concurrency, int) or isinstance(concurrency, bool) or concurrency < 1:
+            raise TaskQualityError(
+                f"concurrency must be an integer >= 1, got {concurrency!r}"
+            )
+        self._concurrency = concurrency
+        # Guards stats/served-model mutations and journal appends across
+        # worker threads (results themselves are per-item independent).
+        self._lock = threading.Lock()
         # Interrupt-resume ledger (issue #8): when set, recorded gateway
         # results are replayed (never re-billed) under content-addressed
         # conditions; see trillic.resume.
@@ -120,8 +135,15 @@ class TaskQualityLoop:
         if self._originals is not None:
             raise TaskQualityError("prime_originals must be called exactly once per run")
         if self._replay is not None:
+            if golden_sha256 is None:
+                raise TaskQualityError(
+                    "prime_originals requires golden_sha256 when a replay "
+                    "ledger is active (the exam identity must be pinned)"
+                )
             self._replay.check_golden(golden_sha256)
         self._originals = {}
+        originals: dict = self._originals
+        fresh: list[GoldenItem] = []
         for item in items:
             recorded = self._replay.originals.get(item.id) if self._replay else None
             if recorded is not None:
@@ -134,9 +156,15 @@ class TaskQualityLoop:
                     "source": "reused",
                 }
             else:
-                original = self._answer_and_judge(item, item.prompt)
-                if self._journal is not None:
-                    self._journal.record(
+                fresh.append(item)
+
+        lock, journal = self._lock, self._journal
+
+        def work(item: GoldenItem) -> None:
+            original = self._answer_and_judge(item, item.prompt)
+            with lock:
+                if journal is not None:
+                    journal.record(
                         kind="original",
                         item_id=item.id,
                         level=None,
@@ -144,7 +172,14 @@ class TaskQualityLoop:
                         answer=original["answer"],
                         scores=original["scores"],
                     )
-                self._originals[item.id] = {**original, "source": "fresh"}
+                originals[item.id] = {**original, "source": "fresh"}
+
+        if self._concurrency > 1 and fresh:
+            with ThreadPoolExecutor(max_workers=self._concurrency) as pool:
+                list(pool.map(work, fresh))
+        else:
+            for item in fresh:
+                work(item)
 
     def original_score(self, item_id: str) -> float:
         if self._originals is None:
@@ -170,7 +205,8 @@ class TaskQualityLoop:
                 f"and length); got {len(items)} items vs {len(refined_texts)} texts"
             )
 
-        rows = []
+        rows: dict[str, dict] = {}
+        fresh: list[tuple[GoldenItem, str]] = []
         for item, refined in zip(items, refined_texts):
             if item.id not in self._originals:
                 raise TaskQualityError(
@@ -185,14 +221,22 @@ class TaskQualityLoop:
                 # content-addressed hit: same compression, same answer
                 self._stats["answers_reused"] += 1
                 self._stats["judges_reused"] += 1
-                compressed = {
-                    "answer": recorded["answer"],
-                    "scores": recorded["scores"],
-                    "score": score_of(recorded["scores"]),
-                    "source": "reused",
-                }
+                rows[item.id] = self._row(
+                    item, original,
+                    {
+                        "answer": recorded["answer"],
+                        "scores": recorded["scores"],
+                        "score": score_of(recorded["scores"]),
+                        "source": "reused",
+                    },
+                )
             else:
-                compressed_result = self._answer_and_judge(item, refined)
+                fresh.append((item, refined))
+
+        def work(pair: tuple[GoldenItem, str]) -> None:
+            item, refined = pair
+            compressed_result = self._answer_and_judge(item, refined)
+            with self._lock:
                 if self._journal is not None:
                     self._journal.record(
                         kind="compressed",
@@ -202,24 +246,20 @@ class TaskQualityLoop:
                         answer=compressed_result["answer"],
                         scores=compressed_result["scores"],
                     )
-                compressed = {**compressed_result, "source": "fresh"}
-            rows.append(
-                {
-                    "id": item.id,
-                    "load_type": item.load_type,
-                    "source_original": original["source"],
-                    "source_compressed": compressed["source"],
-                    "original_answer": original["answer"],
-                    "compressed_answer": compressed["answer"],
-                    "original_judge_scores": original["scores"],
-                    "compressed_judge_scores": compressed["scores"],
-                    "original_score": round(original["score"], _ROUND),
-                    "compressed_score": round(compressed["score"], _ROUND),
-                    "delta": round(compressed["score"] - original["score"], _ROUND),
-                }
-            )
+                rows[item.id] = self._row(item, self._originals[item.id],
+                                          {**compressed_result, "source": "fresh"})
 
-        deltas = [row["delta"] for row in rows]
+        if self._concurrency > 1 and fresh:
+            with ThreadPoolExecutor(max_workers=self._concurrency) as pool:
+                list(pool.map(work, fresh))
+        else:
+            for pair in fresh:
+                work(pair)
+
+        # report rows in the golden item order, independent of completion
+        ordered = [rows[item.id] for item in items]
+
+        deltas = [row["delta"] for row in ordered]
         bootstrap = paired_bootstrap_ci(
             deltas,
             n_resamples=self._n_resamples,
@@ -228,10 +268,10 @@ class TaskQualityLoop:
         )
         return {
             "aggressiveness": level,
-            "item_count": len(rows),
-            "mean_original_score": rounded_mean([r["original_score"] for r in rows]),
+            "item_count": len(ordered),
+            "mean_original_score": rounded_mean([r["original_score"] for r in ordered]),
             "mean_compressed_score": rounded_mean(
-                [r["compressed_score"] for r in rows]
+                [r["compressed_score"] for r in ordered]
             ),
             "mean_delta": rounded_mean(deltas),
             "delta_ci95": {
@@ -239,7 +279,23 @@ class TaskQualityLoop:
                 "high": round(bootstrap.ci_high, _ROUND),
             },
             "ci_lower_bound_not_negative": bootstrap.ci_lower_bound_not_negative,
-            "items": rows,
+            "items": ordered,
+        }
+
+    @staticmethod
+    def _row(item: GoldenItem, original: dict, compressed: dict) -> dict:
+        return {
+            "id": item.id,
+            "load_type": item.load_type,
+            "source_original": original["source"],
+            "source_compressed": compressed["source"],
+            "original_answer": original["answer"],
+            "compressed_answer": compressed["answer"],
+            "original_judge_scores": original["scores"],
+            "compressed_judge_scores": compressed["scores"],
+            "original_score": round(original["score"], _ROUND),
+            "compressed_score": round(compressed["score"], _ROUND),
+            "delta": round(compressed["score"] - original["score"], _ROUND),
         }
 
     def _answer_and_judge(self, item: GoldenItem, payload: str) -> dict:
@@ -249,26 +305,37 @@ class TaskQualityLoop:
         answered = self._gateway.chat(
             self._answer_model, task_prompt(item.load_type, payload)
         )
-        self._served_answer_models.add(answered.model)
-        self._stats["answers_fresh"] += 1
-        judged = self._judge_with_retry(key_points, answered.content)
+        with self._lock:
+            self._served_answer_models.add(answered.model)
+            self._stats["answers_fresh"] += 1
+        judged = self._judge_with_retry(key_points, answered.content, item.id)
         return {"answer": answered.content, "scores": judged, "score": score_of(judged)}
 
-    def _judge_with_retry(self, key_points: list[str], answer: str) -> list[int]:
+    def _judge_with_retry(
+        self, key_points: list[str], answer: str, item_id: str
+    ) -> list[int]:
         """Judge `answer`, re-asking a bounded number of times when the
         reply is malformed (miscounted/prose-wrapped scores). Every
-        attempt is a billed call and is counted; exhaustion raises."""
+        attempt is a billed call and is counted; exhaustion raises with
+        the item id so fixing a systematically-unjudgeable item needs no
+        archaeology."""
         last_error: JudgeError | None = None
         for attempt in range(_JUDGE_PARSE_ATTEMPTS):
             judged = self._gateway.chat(
                 self._judge_model, judge_prompt(key_points, answer)
             )
-            self._served_judge_models.add(judged.model)
-            self._stats["judges_fresh"] += 1
+            with self._lock:
+                self._served_judge_models.add(judged.model)
+                self._stats["judges_fresh"] += 1
             try:
                 return parse_judge_scores(judged.content, len(key_points))
             except JudgeError as e:
                 last_error = e
                 if attempt < _JUDGE_PARSE_ATTEMPTS - 1:
-                    self._stats["judge_retries"] += 1
-        raise last_error if last_error is not None else JudgeError("judge failed")
+                    with self._lock:
+                        self._stats["judge_retries"] += 1
+        raise JudgeError(
+            f"item {item_id!r}: judge stayed malformed for "
+            f"{_JUDGE_PARSE_ATTEMPTS} attempts ({len(key_points)} key points); "
+            f"last reply error: {last_error}"
+        ) from last_error

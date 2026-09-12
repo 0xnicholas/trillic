@@ -19,6 +19,7 @@ sync, and run immutability is preserved (a resume writes a fresh run dir).
 
 import hashlib
 import json
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -213,7 +214,11 @@ class CallJournal:
 
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
-        self._file = None
+        self._file: "TextIO | None" = None
+        # Appends from concurrent quality workers must interleave as
+        # whole lines (a torn line is dropped by the loader — keep them
+        # from happening in the first place).
+        self._lock = threading.Lock()
 
     @classmethod
     def load_replay(cls, path: Path, pins: dict) -> Replay | None:
@@ -258,24 +263,25 @@ class CallJournal:
         import sys
 
         try:
-            if self._file is None:
-                self.path.parent.mkdir(parents=True, exist_ok=True)
-                self._file = self.path.open("a", encoding="utf-8")
-            self._file.write(
-                json.dumps(
-                    {
-                        "kind": kind,
-                        "item": item_id,
-                        "level": level,
-                        "payload": payload,
-                        "answer": answer,
-                        "scores": scores,
-                    },
-                    ensure_ascii=False,
+            with self._lock:
+                if self._file is None:
+                    self.path.parent.mkdir(parents=True, exist_ok=True)
+                    self._file = self.path.open("a", encoding="utf-8")
+                self._file.write(
+                    json.dumps(
+                        {
+                            "kind": kind,
+                            "item": item_id,
+                            "level": level,
+                            "payload": payload,
+                            "answer": answer,
+                            "scores": scores,
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
                 )
-                + "\n"
-            )
-            self._file.flush()
+                self._file.flush()
         except OSError:
             print(
                 "warning: billing journal write failed "

@@ -15,6 +15,11 @@
 # (content-addressed journal shares originals across checkpoints, issue
 # #9 prep); only the 5 levels x 149 compressed (answer+judge) ~ 1.5k
 # calls are billed fresh.
+#
+# Judge pin (2026-09-12): switched from kimi/kimi-k2 (upstream outage,
+# owner-authorized, pre-freeze) — see full149-mbert-base.toml for the
+# caveat trail; both full149 checkpoints judge under zhipu/glm-5.1 so
+# the comparison stays internally consistent.
 
 name = "full149-xlmr-large"
 
@@ -31,7 +36,9 @@ url = "http://127.0.0.1:3005"
 
 [quality]
 answer_model = "deepseek/deepseek-v4-pro"
-judge_model = "kimi/kimi-k2"
+judge_model = "zhipu/glm-5.1"
+# item-level answer+judge workers: execution detail only, results identical
+concurrency = 3  # glm coding-plan saturation: 6/dual-lane tripped 503s; 3/lane rides the long backoff ladder
 
 [metrics]
 native_flavor = "sentencepiece"

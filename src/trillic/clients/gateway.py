@@ -13,6 +13,7 @@ variable (issue #1: credentials never land in config files or the repo).
 """
 
 import os
+import random
 import time
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -25,6 +26,22 @@ from trillic.judge import (
 )
 
 SERVICE_KEY_ENV = "REFINE_SERVICE_KEY"
+
+# Rate limiting / upstream saturation gets a longer ladder than a plain
+# transport stall: glm coding-plan saturation (2026-09-12) outlived two
+# quick retries, and 503 "no candidate" explicitly invites retry-later.
+_RATE_LIMIT_RETRIES = 6
+_RATE_LIMIT_MAX_WAIT = 30.0
+
+
+def _rate_limit_wait(retry: int) -> float:
+    """Jittered exponential backoff for rate limits (2s, 4s, ... capped)."""
+    return min(_RATE_LIMIT_MAX_WAIT, 2.0 * (2 ** (retry - 1))) + random.random()
+
+# Transient statuses that get the bounded retry: upstream 5xx and rate
+# limiting (a real 502 killed a full-sweep run on 2026-09-12). 4xx stays
+# fail-fast — those are deliberate gateway answers.
+_TRANSIENT_STATUS = frozenset({429, 500, 502, 503, 504})
 
 
 class GatewayError(Exception):
@@ -81,18 +98,44 @@ class HttpGatewayClient:
         }
         headers = {"Authorization": f"Bearer {self._service_key}", "X-TC-Refine": "false"}
         last_error: Exception | None = None
-        for attempt in range(self._max_retries + 1):
+        response: httpx.Response | None = None
+        transient_retries = 0
+        rate_retries = 0
+        while True:
             try:
                 response = self._client.post(
                     "/v1/chat/completions", json=payload, headers=headers
                 )
-                break
             except httpx.HTTPError as e:
                 last_error = e
-                if attempt < self._max_retries:
-                    time.sleep(2 * (attempt + 1))
-        else:
-            raise GatewayError(f"gateway unreachable: {last_error}") from last_error
+                response = None
+                if transient_retries < self._max_retries:
+                    transient_retries += 1
+                    time.sleep(2 * transient_retries)
+                    continue
+                break
+            if response.status_code in _TRANSIENT_STATUS:
+                # Upstream saturation (429/5xx, incl. 503 "no candidate ...
+                # retry later") rides a long jittered exponential ladder:
+                # glm coding-plan saturation outlived two quick retries on
+                # 2026-09-12. Transport stalls keep the short ladder above.
+                last_error = GatewayError(
+                    f"gateway returned {response.status_code} (transient): "
+                    f"{response.text[:300]}"
+                )
+                if rate_retries < _RATE_LIMIT_RETRIES:
+                    rate_retries += 1
+                    time.sleep(_rate_limit_wait(rate_retries))
+                    continue
+                response = None
+                break
+            break
+        if response is None:
+            raise GatewayError(
+                f"gateway unreachable or transient (transport attempts "
+                f"{self._max_retries + 1}, rate-limit attempts "
+                f"{_RATE_LIMIT_RETRIES + 1}): {last_error}"
+            ) from last_error
         if response.status_code < 200 or response.status_code >= 300:
             raise GatewayError(
                 f"gateway returned {response.status_code}: {response.text[:500]}"

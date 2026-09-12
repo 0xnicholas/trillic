@@ -34,6 +34,7 @@ class RunConfig:
     answer_model: str = "stub-answerer"
     judge_model: str = "stub-judge"
     bootstrap_samples: int = 10_000
+    concurrency: int = 1
 
     def snapshot(self) -> dict:
         return asdict(self)
@@ -62,6 +63,7 @@ _SECTION_FIELDS: dict[str, dict[str, str]] = {
         "answer_model": "answer_model",
         "judge_model": "judge_model",
         "bootstrap_samples": "bootstrap_samples",
+        "concurrency": "concurrency",
     },
 }
 _NATIVE_FLAVORS = ("word", "wordpiece", "sentencepiece")
@@ -158,6 +160,15 @@ def _validate_task_quality(config: RunConfig, path: Path) -> None:
     if isinstance(samples, bool) or not isinstance(samples, int) or samples < 1:
         raise ConfigError(
             f"{path}: quality.bootstrap_samples must be an integer >= 1, got {samples!r}"
+        )
+    if (
+        isinstance(config.concurrency, bool)
+        or not isinstance(config.concurrency, int)
+        or config.concurrency < 1
+    ):
+        raise ConfigError(
+            f"{path}: quality.concurrency must be an integer >= 1, "
+            f"got {config.concurrency!r}"
         )
 
 

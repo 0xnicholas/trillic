@@ -303,7 +303,7 @@ class TestJudgeMalformedReplyRetry:
         assert len(row["compressed_judge_scores"]) == 6
         assert loop.call_stats()["judge_retries"] == 1
 
-    def test_persistently_malformed_still_fails_loudly(self, tmp_path):
+    def test_persistently_malformed_still_fails_loudly_with_item_id(self, tmp_path):
         items = [GoldenItem(
             id="rag-1", load_type="rag", prompt="context with 6 facts",
             key_points=tuple(f"fact {i}" for i in range(6)), source=SOURCE,
@@ -312,7 +312,67 @@ class TestJudgeMalformedReplyRetry:
         loop = self._loop(gateway)
         from trillic.judge import JudgeError
 
-        with pytest.raises(JudgeError):
+        with pytest.raises(JudgeError, match="rag-1"):
             loop.prime_originals(items, golden_sha256="sha")
         # bounded: attempts == 1 + judge retries, not unbounded
-        assert gateway.judge_calls == 3
+        assert gateway.judge_calls == 5
+
+
+class TestItemConcurrency:
+    """Concurrent answer+judge must be behavior-identical to serial:
+    same rows (same order), same stats, same journal content (order
+    aside) — concurrency is an execution detail, never a results
+    detail."""
+
+    def _run(self, gateway, concurrency):
+        loop = TaskQualityLoop(
+            gateway,
+            answer_model="stub-answerer",
+            judge_model="stub-judge",
+            seed=7,
+            n_resamples=200,
+            concurrency=concurrency,
+        )
+        loop.prime_originals(ITEMS, golden_sha256="sha")
+        return loop.evaluate_level(0.2, ITEMS, [f"compressed {i.id}" for i in ITEMS])
+
+    def test_concurrent_rows_match_serial_exactly(self):
+        serial = self._run(StubGatewayClient(), 1)
+        concurrent = self._run(StubGatewayClient(), 4)
+        assert concurrent["items"] == serial["items"]
+        assert (
+            concurrent["delta_ci95"] == serial["delta_ci95"]
+        )
+
+    def test_journal_records_all_items_under_concurrency(self, tmp_path):
+        from trillic.resume import CallJournal
+        import json as _json
+
+        journal = CallJournal(tmp_path / "ledger.jsonl")
+        loop = TaskQualityLoop(
+            StubGatewayClient(),
+            answer_model="stub-answerer",
+            judge_model="stub-judge",
+            seed=7,
+            n_resamples=200,
+            concurrency=6,
+            journal=journal,
+        )
+        loop.prime_originals(ITEMS, golden_sha256="sha")
+        loop.evaluate_level(0.2, ITEMS, [f"compressed {i.id}" for i in ITEMS])
+        journal.close()
+        lines = [
+            _json.loads(line)
+            for line in (tmp_path / "ledger.jsonl").read_text().splitlines()
+            if line.strip()
+        ]
+        originals = sorted(r["item"] for r in lines if r["kind"] == "original")
+        compressed = sorted(
+            (r["item"], r["level"])
+            for r in lines
+            if r["kind"] == "compressed"
+        )
+        assert originals == sorted(i.id for i in ITEMS)
+        assert compressed == sorted(
+            (i.id, 0.2) for i in ITEMS
+        )

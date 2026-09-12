@@ -142,6 +142,7 @@ def run_eval(
             n_resamples=config.bootstrap_samples,
             replay=replay,
             journal=journal,
+            concurrency=config.concurrency,
         )
         # Originals are level-independent: answered + judged exactly once,
         # so a sweep pays for them one time only.
