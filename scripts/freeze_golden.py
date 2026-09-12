@@ -22,11 +22,11 @@ REPO = Path(__file__).resolve().parents[1]
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 3:
+    if len(argv) < 3:
         print("usage: freeze_golden.py <run_config.toml> <golden file>...", file=sys.stderr)
         return 2
-    config_path = Path(argv[1])
-    golden_paths = [Path(p) for p in argv[2:]]
+    config_path = Path(argv[1]).resolve()
+    golden_paths = [Path(p).resolve() for p in argv[2:]]
     config = tomllib.loads(config_path.read_text(encoding="utf-8"))
 
     combined = hashlib.sha256()
