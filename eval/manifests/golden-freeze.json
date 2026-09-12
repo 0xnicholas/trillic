@@ -13,8 +13,8 @@
     "sha256": "fb728d6a5042d5f7dc29fe97aace24e7b1135fe809e8a975f1643086898b841b",
     "byte_caliber": "argv-order concatenation of the listed files (identical to run reports' golden.sha256)"
   },
-  "repo_commit": "1d7528b68865d8bab9698ef545ddeee946057f25",
-  "repo_dirty_at_freeze": true,
+  "repo_commit": "bfb30e8f9a6a3156756a0e8d39a6c10045275b9b",
+  "repo_dirty_at_freeze": false,
   "quality_pins": {
     "answer_model": "deepseek/deepseek-v4-pro",
     "judge_model": "zhipu/glm-5.1",
