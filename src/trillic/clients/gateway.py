@@ -14,6 +14,7 @@ variable (issue #1: credentials never land in config files or the repo).
 
 import os
 import random
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -71,12 +72,19 @@ class HttpGatewayClient:
         timeout_seconds: float = 120.0,
         transport: httpx.BaseTransport | None = None,
         max_retries: int = 1,
+        min_call_interval: float = 0.0,
     ) -> None:
         self._client = httpx.Client(
             base_url=base_url.rstrip("/"),
             timeout=timeout_seconds,
             transport=transport,
         )
+        # Proactive pacing: call STARTS are spaced >= min_call_interval
+        # (lock held while waiting, so worker threads serialize their
+        # dispatch rate — concurrency stays, request rate is capped).
+        self._min_call_interval = max(0.0, min_call_interval)
+        self._pace_lock = threading.Lock()
+        self._next_call_at = 0.0
         # Paid calls through a dev gateway see transient stalls (observed
         # twice during the issue-8 pilot). A timed-out request MAY have
         # been billed server-side; exactly-once is impossible client-side,
@@ -96,6 +104,14 @@ class HttpGatewayClient:
             "messages": [{"role": "user", "content": prompt}],
             "stream": False,
         }
+        if self._min_call_interval > 0:
+            with self._pace_lock:
+                now = time.monotonic()
+                wait = self._next_call_at - now
+                if wait > 0:
+                    time.sleep(wait)
+                    now = time.monotonic()
+                self._next_call_at = max(now, self._next_call_at) + self._min_call_interval
         headers = {"Authorization": f"Bearer {self._service_key}", "X-TC-Refine": "false"}
         last_error: Exception | None = None
         response: httpx.Response | None = None

@@ -28,6 +28,7 @@ class RunConfig:
     sidecar_compress: bool = True
     gateway_mode: str = "stub"
     gateway_url: str = "http://127.0.0.1:3005"
+    gateway_min_call_interval: float = 0.0
     native_flavor: str = "word"
     native_vocab: str | None = None
     task_quality: bool = True
@@ -56,7 +57,11 @@ _SECTION_FIELDS: dict[str, dict[str, str]] = {
         "rewrite": "sidecar_rewrite",
         "compress": "sidecar_compress",
     },
-    "gateway": {"mode": "gateway_mode", "url": "gateway_url"},
+    "gateway": {
+        "mode": "gateway_mode",
+        "url": "gateway_url",
+        "min_call_interval": "gateway_min_call_interval",
+    },
     "metrics": {"native_flavor": "native_flavor", "native_vocab": "native_vocab"},
     "quality": {
         "task_quality": "task_quality",
@@ -130,6 +135,16 @@ def _validate(config: RunConfig, path: Path) -> None:
     if config.gateway_mode not in ("stub", "http"):
         raise ConfigError(
             f"{path}: gateway.mode must be 'stub' or 'http', got {config.gateway_mode!r}"
+        )
+    if (
+        isinstance(config.gateway_min_call_interval, bool)
+        or not isinstance(config.gateway_min_call_interval, (int, float))
+        or config.gateway_min_call_interval < 0
+    ):
+        raise ConfigError(
+            f"{path}: gateway.min_call_interval must be a number >= 0 "
+            f"(seconds between call starts; 0 = unpaced), got "
+            f"{config.gateway_min_call_interval!r}"
         )
     if not config.sidecar_rewrite and not config.sidecar_compress:
         raise ConfigError(

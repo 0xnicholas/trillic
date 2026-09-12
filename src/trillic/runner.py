@@ -56,7 +56,10 @@ def build_refine_client(config: RunConfig) -> RefineClient:
 def build_gateway_client(config: RunConfig) -> GatewayClient:
     if config.gateway_mode == "stub":
         return StubGatewayClient()
-    return HttpGatewayClient(base_url=config.gateway_url)
+    return HttpGatewayClient(
+        base_url=config.gateway_url,
+        min_call_interval=config.gateway_min_call_interval,
+    )
 
 
 def resolve_native_vocab(config: RunConfig, config_path: Path) -> Path | None:

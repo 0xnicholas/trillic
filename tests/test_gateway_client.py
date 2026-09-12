@@ -278,3 +278,34 @@ class TestSustainedOverloadBackoff:
         assert sleeps[0] >= 2.0
         assert all(b - a > 0.5 for a, b in zip(sleeps[:4], sleeps[1:5]))
         assert sleeps[-1] <= _RATE_LIMIT_MAX_WAIT + 1
+
+
+class TestCallPacing:
+    """Proactive rate control (glm coding-plan saturation, 2026-09-12):
+    call STARTS are spaced >= min_call_interval even across worker
+    threads, so concurrency alone can never masquerade as unbounded
+    request rate."""
+
+    def test_sequential_calls_are_spaced(self, monkeypatch):
+        sleeps: list[float] = []
+        monkeypatch.setattr("trillic.clients.gateway.time.sleep", lambda s: sleeps.append(s))
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=COMPLETION_RESPONSE)
+
+        client = make_client(handler, service_key="k", min_call_interval=6.0)
+        client.chat(model="m", prompt="p1")
+        client.chat(model="m", prompt="p2")
+        assert sleeps and any(s >= 5.0 for s in sleeps)
+
+    def test_no_pacing_by_default(self, monkeypatch):
+        sleeps: list[float] = []
+        monkeypatch.setattr("trillic.clients.gateway.time.sleep", lambda s: sleeps.append(s))
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json=COMPLETION_RESPONSE)
+
+        client = make_client(handler, service_key="k")
+        client.chat(model="m", prompt="p1")
+        client.chat(model="m", prompt="p2")
+        assert sleeps == []

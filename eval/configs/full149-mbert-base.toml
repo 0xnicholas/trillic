@@ -30,12 +30,14 @@ url = "http://127.0.0.1:9797"
 [gateway]
 mode = "http"
 url = "http://127.0.0.1:3005"
+# proactive rate control: >= 6s between gateway call starts per lane
+min_call_interval = 6.0
 
 [quality]
 answer_model = "deepseek/deepseek-v4-pro"
 judge_model = "zhipu/glm-5.1"
 # item-level answer+judge workers: execution detail only, results identical
-concurrency = 3  # glm coding-plan saturation: 6/dual-lane tripped 503s; 3/lane rides the long backoff ladder
+concurrency = 2  # glm coding-plan rate ceiling: 2 workers/lane + 6s call spacing keeps judge pressure under the observed trip point
 
 [metrics]
 native_flavor = "wordpiece"
