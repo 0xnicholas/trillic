@@ -253,3 +253,66 @@ class TestGuardrails:
             loop.evaluate_level(
                 0.2, ITEMS + [extra], refined_texts + [extra.prompt]
             )
+
+
+class FlakyJudgeGateway(StubGatewayClient):
+    """Real-world judge noise fixture: the first judge reply miscounts
+    the key points (5 scores for 6), later replies are well-formed."""
+
+    def __init__(self, bad_replies: int):
+        self.bad_replies = bad_replies
+        self.judge_calls = 0
+
+    def chat(self, model: str, prompt: str):
+        result = super().chat(model, prompt)
+        if (
+            split_judge_prompt(prompt) is not None
+            and self.judge_calls < self.bad_replies
+        ):
+            self.judge_calls += 1
+            bad = '{"scores": [1, 1, 0, 1, 0]}'  # one score short
+            return type(result)(content=bad, model=result.model, usage=result.usage)
+        return result
+
+
+class TestJudgeMalformedReplyRetry:
+    """A transient malformed judge reply must not kill a 1.8k-call run:
+    bounded re-asking, fresh billing per attempt, hard fail only when the
+    judge stays malformed."""
+
+    def _loop(self, gateway):
+        return TaskQualityLoop(
+            gateway,
+            answer_model="stub-answerer",
+            judge_model="stub-judge",
+            seed=0,
+            n_resamples=100,
+        )
+
+    def test_malformed_then_valid_recovers(self, tmp_path):
+        items = [GoldenItem(
+            id="rag-1", load_type="rag", prompt="context with 6 facts",
+            key_points=tuple(f"fact {i}" for i in range(6)), source=SOURCE,
+        )]
+        gateway = FlakyJudgeGateway(bad_replies=1)
+        loop = self._loop(gateway)
+        loop.prime_originals(items, golden_sha256="sha")
+        block = loop.evaluate_level(0.2, items, ["compressed" for _ in items])
+        row = block["items"][0]
+        assert len(row["original_judge_scores"]) == 6
+        assert len(row["compressed_judge_scores"]) == 6
+        assert loop.call_stats()["judge_retries"] == 1
+
+    def test_persistently_malformed_still_fails_loudly(self, tmp_path):
+        items = [GoldenItem(
+            id="rag-1", load_type="rag", prompt="context with 6 facts",
+            key_points=tuple(f"fact {i}" for i in range(6)), source=SOURCE,
+        )]
+        gateway = FlakyJudgeGateway(bad_replies=99)
+        loop = self._loop(gateway)
+        from trillic.judge import JudgeError
+
+        with pytest.raises(JudgeError):
+            loop.prime_originals(items, golden_sha256="sha")
+        # bounded: attempts == 1 + judge retries, not unbounded
+        assert gateway.judge_calls == 3

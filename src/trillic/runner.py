@@ -13,6 +13,7 @@ delta with a seeded paired-bootstrap 95% CI. metrics.json + report.md out.
 """
 
 import hashlib
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -317,6 +318,32 @@ def _build_level_block(
     }, refine_results
 
 
+def _git_identity() -> tuple[str | None, bool | None]:
+    """(commit, dirty) of the repo the harness runs from, best-effort.
+
+    Freeze discipline (issue #9): a baseline report must be auditable to
+    the exact code state that produced it — the exam's content hash
+    (golden.sha256) plus the harness revision. None when not run from a
+    git checkout (nothing to pin, honestly reported as such).
+    """
+    try:
+        root = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, timeout=10, check=True,
+        ).stdout.strip()
+        commit = subprocess.run(
+            ["git", "-C", root, "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=10, check=True,
+        ).stdout.strip()
+        status = subprocess.run(
+            ["git", "-C", root, "status", "--porcelain"],
+            capture_output=True, text=True, timeout=10, check=True,
+        ).stdout
+        return commit, bool(status.strip())
+    except (subprocess.SubprocessError, OSError):
+        return None, None
+
+
 def _build_metrics(
     config: RunConfig,
     config_path: Path,
@@ -332,6 +359,7 @@ def _build_metrics(
 ) -> dict:
     config_raw = Path(config_path).read_text(encoding="utf-8")
     golden_raw_bytes = golden_bytes
+    git_commit, git_dirty = _git_identity()
 
     refine_models = sorted(
         {
@@ -350,6 +378,9 @@ def _build_metrics(
             "version": __version__,
             "python": sys.version.split()[0],
             "tiktoken": _tiktoken_version(),
+            # Freeze pins (issue #9): code revision behind the numbers.
+            "git_commit": git_commit,
+            "git_dirty": git_dirty,
         },
         "config": {
             "source_path": str(config_path),

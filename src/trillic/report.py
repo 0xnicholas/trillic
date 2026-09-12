@@ -45,6 +45,8 @@ def render_report_md(metrics: dict) -> str:
         f"- harness: {metrics['harness']['name']} v{metrics['harness']['version']}"
         f" (python {metrics['harness'].get('python', '?')},"
         f" tiktoken {metrics['harness'].get('tiktoken', '?')})",
+        f"- repo: commit `{str(metrics['harness'].get('git_commit'))[:12]}…`"
+        + (", tree dirty" if metrics['harness'].get('git_dirty') else ", tree clean"),
         f"- golden: {metrics['golden']['item_count']} items,"
         f" sha256 `{metrics['golden']['sha256'][:12]}…`",
         f"- sidecar: mode={sidecar['mode']}, refine_model={sidecar['refine_model']},"

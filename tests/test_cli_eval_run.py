@@ -443,3 +443,23 @@ class TestCliErrors:
             main(["--version"])
         assert exc_info.value.code == 0
         assert __version__ in capsys.readouterr().out
+
+
+class TestGitCommitPinning:
+    """Freeze discipline (issue #9): every report is auditable to the
+    exact repo state that produced it — golden sha + code revision."""
+
+    def test_metrics_pin_repo_commit(self, tmp_path, fixture_config_path, fixture_golden_path):
+        import subprocess
+
+        run_dir = run_eval(tmp_path, fixture_config_path, fixture_golden_path)
+        metrics = load_metrics(run_dir)
+        harness = metrics["harness"]
+        expected = subprocess.run(
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+        assert harness["git_commit"] == expected
+        assert isinstance(harness["git_dirty"], bool)
+        # the human report surfaces the pin too
+        report = (run_dir / "report.md").read_text()
+        assert expected[:12] in report

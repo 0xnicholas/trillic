@@ -23,7 +23,13 @@ from trillic.bootstrap import (
 )
 from trillic.clients.gateway import GatewayClient
 from trillic.golden import GoldenItem
-from trillic.judge import judge_prompt, parse_judge_scores, rubric_sha256, score_of
+from trillic.judge import (
+    JudgeError,
+    judge_prompt,
+    parse_judge_scores,
+    rubric_sha256,
+    score_of,
+)
 from trillic.quality import rounded_mean
 from trillic.resume import CallJournal, Replay
 from trillic.tasks import task_prompt, task_templates_sha256
@@ -34,6 +40,13 @@ _ROUND = 4
 
 class TaskQualityError(RuntimeError):
     """The loop was driven out of order or with mismatched inputs."""
+
+
+# A malformed judge reply (miscounted scores, stray prose) is sampling
+# noise from the judge model, not a protocol break: re-ask bounded times
+# before failing the run (mirrors the #8 transport-stall retry posture;
+# each attempt is honestly billed and counted in `judge_retries`).
+_JUDGE_PARSE_ATTEMPTS = 3
 
 
 class TaskQualityLoop:
@@ -75,7 +88,13 @@ class TaskQualityLoop:
                 task_templates_sha256=task_templates_sha256(),
             )
         self._originals: dict[str, dict] | None = None
-        self._stats = {"answers_fresh": 0, "answers_reused": 0, "judges_fresh": 0, "judges_reused": 0}
+        self._stats = {
+            "answers_fresh": 0,
+            "answers_reused": 0,
+            "judges_fresh": 0,
+            "judges_reused": 0,
+            "judge_retries": 0,
+        }
         # Models the gateway REPORTS serving (the version of record for the
         # pin discipline — may differ from the requested pins when the
         # gateway aliases).
@@ -232,10 +251,24 @@ class TaskQualityLoop:
         )
         self._served_answer_models.add(answered.model)
         self._stats["answers_fresh"] += 1
-        judged = self._gateway.chat(
-            self._judge_model, judge_prompt(key_points, answered.content)
-        )
-        self._served_judge_models.add(judged.model)
-        self._stats["judges_fresh"] += 1
-        scores = parse_judge_scores(judged.content, len(key_points))
-        return {"answer": answered.content, "scores": scores, "score": score_of(scores)}
+        judged = self._judge_with_retry(key_points, answered.content)
+        return {"answer": answered.content, "scores": judged, "score": score_of(judged)}
+
+    def _judge_with_retry(self, key_points: list[str], answer: str) -> list[int]:
+        """Judge `answer`, re-asking a bounded number of times when the
+        reply is malformed (miscounted/prose-wrapped scores). Every
+        attempt is a billed call and is counted; exhaustion raises."""
+        last_error: JudgeError | None = None
+        for attempt in range(_JUDGE_PARSE_ATTEMPTS):
+            judged = self._gateway.chat(
+                self._judge_model, judge_prompt(key_points, answer)
+            )
+            self._served_judge_models.add(judged.model)
+            self._stats["judges_fresh"] += 1
+            try:
+                return parse_judge_scores(judged.content, len(key_points))
+            except JudgeError as e:
+                last_error = e
+                if attempt < _JUDGE_PARSE_ATTEMPTS - 1:
+                    self._stats["judge_retries"] += 1
+        raise last_error if last_error is not None else JudgeError("judge failed")

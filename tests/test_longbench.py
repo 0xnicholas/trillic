@@ -71,11 +71,11 @@ class TestDeriveKeyPoints:
         assert any("1,200" in p for p in points)
         assert not any("board met" in p for p in points)
 
-    def test_points_are_capped_and_trimmed(self):
+    def test_points_are_capped_in_count_but_never_truncated(self):
         answer = " ".join(f"Sentence number {i} with digit {i}." for i in range(30))
         points = derive_key_points([answer])
         assert len(points) <= 6
-        assert all(len(p) <= 160 for p in points)
+        assert all(p.endswith(".") for p in points)  # whole sentences only
 
 
 class TestBuildManifest:
@@ -184,3 +184,37 @@ class TestBuildRagEntries:
         assert subset["entries"] == 1
         assert (subset["eval_half"], subset["train_half"]) == (1, 0)
         assert subset["train_boundary_fingerprint"] is None
+
+
+class TestDeriveKeyPointsSentenceIntegrity:
+    """Regression (issue #9 data fix): the old derivation split sentences
+    on abbreviation periods ("U.S.", "H.R.", "S.") and hard-truncated
+    points at 160 chars — producing fragment "facts" the judge cannot
+    count. Points must be whole sentences."""
+
+    def test_full_sentences_survive_no_char_truncation(self):
+        long_sentence = (
+            "Title 5 of the U.S. Code contains most of the standards "
+            "governing federal employment, and OPM is generally responsible "
+            "for implementing these requirements across the service."
+        )
+        points = derive_key_points([long_sentence])
+        assert points == [long_sentence]
+
+    def test_abbreviation_periods_do_not_split_sentences(self):
+        answer = (
+            "In the 116th Congress, the Fair Trade with China Enforcement "
+            "Act (H.R. 704 and S. 2) and the Reciprocal Trade Act "
+            "(H.R. 764) were introduced. Spending rose 4%."
+        )
+        points = derive_key_points([answer])
+        assert any("(H.R. 704 and S. 2)" in p for p in points)
+        assert not any(p.endswith(("H.R", "S.", "U.S.")) for p in points)
+
+    def test_pub_l_no_citation_stays_one_sentence(self):
+        answer = (
+            "Pub. L. No. 110-229, enacted in 2008, amended the covenant to "
+            "apply federal immigration law after a transition period ending in 2019."
+        )
+        points = derive_key_points([answer])
+        assert points == [answer]

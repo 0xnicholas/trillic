@@ -43,7 +43,6 @@ _PROMPT_TEMPLATES = {
     ),
 }
 
-_MAX_POINT_CHARS = 160
 _MAX_POINTS = 6
 _SHORT_ANSWER_CHARS = 80
 
@@ -78,12 +77,41 @@ def render_prompt(subset: str, context: str, question: str) -> str:
     return template.format(context=context, question=question)
 
 
+# Abbreviation periods that must NOT end a sentence (gov_report/GAO
+# domain: citations and agency names). Splitting on them produced
+# fragment "facts" no judge can count — regression-tested.
+_ABBREVIATIONS = (
+    "U.S.C", "U.S", "H.R", "D.C", "Pub. L. No", "Pub. L", "Pub",
+    "No", "Mr", "Mrs", "Dr", "Fig", "e.g", "i.e", "etc", "vs",
+    "al", "Vol", "pp", "ch", "sec",
+)
+_SENTINEL = "\ue000"
+
+
+def split_sentences(text: str) -> list[str]:
+    """Sentence-split with abbreviation protection (whole sentences only)."""
+    protected = text
+    for abbreviation in _ABBREVIATIONS:
+        protected = protected.replace(abbreviation + ".", abbreviation + _SENTINEL)
+    # single capital + period before a digit/paren = bill citation ("S. 2")
+    protected = re.sub(
+        r"\b([A-Z])\. (?=[\d(])",
+        lambda m: m.group(1) + _SENTINEL + " ",
+        protected,
+    )
+    parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+", protected) if p.strip()]
+    return [p.replace(_SENTINEL, ".") for p in parts]
+
+
 def derive_key_points(answers: list[str]) -> list[str]:
     """Deterministic draft of must-survive facts from dataset annotations.
 
-    Short answers are the point itself. Long answers contribute their first
-    sentence plus every sentence carrying a digit (numeric facts are the
-    known failure mode this project measures). Hand-pruning refines this.
+    Short answers are the point itself. Long answers contribute their
+    first sentence plus every sentence carrying a digit (numeric facts
+    are the known failure mode this project measures). Points are WHOLE
+    sentences — never char-truncated and never split on abbreviation
+    periods (a truncated fragment is not a fact; the judge cannot grade
+    "Title 5 of the U.S."). Hand-pruning refines this.
     """
     answer = next((a.strip() for a in answers if isinstance(a, str) and a.strip()), "")
     if not answer:
@@ -91,7 +119,7 @@ def derive_key_points(answers: list[str]) -> list[str]:
     if len(answer) <= _SHORT_ANSWER_CHARS:
         return [answer]
 
-    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", answer) if s.strip()]
+    sentences = split_sentences(answer)
     chosen: list[str] = []
     if sentences:
         chosen.append(sentences[0])
@@ -100,8 +128,7 @@ def derive_key_points(answers: list[str]) -> list[str]:
     for s in chosen:
         if s not in deduped:
             deduped.append(s)
-    points = [s[:_MAX_POINT_CHARS] for s in deduped[:_MAX_POINTS]]
-    return points or [answer[:_MAX_POINT_CHARS]]
+    return deduped[:_MAX_POINTS] or [answer]
 
 
 def build_manifest(subsets_toml: Path, data_dir: Path) -> dict:

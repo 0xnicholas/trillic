@@ -162,6 +162,7 @@ class TestReplayReuse:
             "answers_reused": 4,  # 2 items x (original + compressed)
             "judges_fresh": 0,
             "judges_reused": 4,
+            "judge_retries": 0,
         }
         assert all(row["source_original"] == "reused" for row in block["items"])
         assert all(row["source_compressed"] == "reused" for row in block["items"])
@@ -293,4 +294,5 @@ class TestFreshRunAccounting:
             "answers_reused": 0,
             "judges_fresh": 4,
             "judges_reused": 0,
+            "judge_retries": 0,
         }

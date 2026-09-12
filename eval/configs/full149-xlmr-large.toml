@@ -1,0 +1,38 @@
+# Full-set baseline: the same 149-entry exam through the PUBLIC
+# XLM-R-large checkpoint (microsoft/llmlingua-2-xlm-roberta-large-
+# meetingbank) — the second public baseline for the 后手牌 activation
+# criteria (quality significantly higher AND latency acceptable;
+# decisions.md §6). The sidecar is relaunched with COMPRESSION_MODEL_ID
+# pointing at the XLM-R snapshot; the harness black-box boundary is
+# untouched (same /refine contract, same latency-measurement shape).
+#
+# Rewrite stays off: the XLM-R head is XLMRobertaForTokenClassification
+# (.roberta, not .bert), so the rewrite-stage similarity guardrail would
+# not run against it anyway — and compress-only is exactly the surface
+# this baseline measures.
+#
+# Gateway spend: originals are replayed from the mBERT run's ledger
+# (content-addressed journal shares originals across checkpoints, issue
+# #9 prep); only the 5 levels x 149 compressed (answer+judge) ~ 1.5k
+# calls are billed fresh.
+
+name = "full149-xlmr-large"
+
+[run]
+levels = [0.1, 0.2, 0.3, 0.4, 0.5]
+
+[sidecar]
+mode = "http"
+url = "http://127.0.0.1:9798"  # second sidecar instance, COMPRESSION_MODEL_ID=xlm-roberta-large
+
+[gateway]
+mode = "http"
+url = "http://127.0.0.1:3005"
+
+[quality]
+answer_model = "deepseek/deepseek-v4-pro"
+judge_model = "kimi/kimi-k2"
+
+[metrics]
+native_flavor = "sentencepiece"
+native_vocab = "../assets/tokenizers/xlm-roberta-large-tokenizer.json"

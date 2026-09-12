@@ -1,0 +1,19 @@
+# Zero-cost preflight for the full 149-entry sweep (issue #9): same exam,
+# same sweep shape (0.1-0.5), stub sidecar + stub gateway. Proves the
+# pipeline end to end before any real run — config validity, golden
+# combination, journal mechanics, report rendering — with zero network,
+# zero spend.
+
+name = "full149-preflight-stub"
+
+[run]
+levels = [0.1, 0.2, 0.3, 0.4, 0.5]
+
+[sidecar]
+mode = "stub"
+
+[gateway]
+mode = "stub"
+
+[metrics]
+native_flavor = "word"

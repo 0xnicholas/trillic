@@ -1,0 +1,34 @@
+# Full-set baseline: all 149 golden entries (RAG 49 + sys 50 + dlg 50)
+# through the REAL sidecar (mBERT-base, the production checkpoint) and the
+# REAL gateway. Sweep 0.1-0.5 (issue #9: the old benchmark never covered
+# above 0.3; this closes the gap).
+#
+# Gateway spend: 149 originals x (answer+judge) once + 5 levels x 149 x
+# (answer+judge) ~ 1.8k calls (deepseek answer + kimi judge, host ledger).
+# Judge pins kimi/kimi-k2 (different vendor from the answer model — avoids
+# self-preference; anthropic upstream key is a placeholder in this env).
+#
+# Interruptions are safe: the crash journal under runs/.ledger/ replays
+# completed items on rerun (no re-billing). Latency is recorded per call
+# (p50/p95 per level) — the production-shape numbers include HTTP overhead.
+
+name = "full149-mbert-base"
+
+[run]
+levels = [0.1, 0.2, 0.3, 0.4, 0.5]
+
+[sidecar]
+mode = "http"
+url = "http://127.0.0.1:9797"
+
+[gateway]
+mode = "http"
+url = "http://127.0.0.1:3005"
+
+[quality]
+answer_model = "deepseek/deepseek-v4-pro"
+judge_model = "kimi/kimi-k2"
+
+[metrics]
+native_flavor = "wordpiece"
+native_vocab = "../assets/tokenizers/bert-base-multilingual-cased-vocab.txt"
