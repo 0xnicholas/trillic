@@ -2,6 +2,7 @@
 
 The suite must be zero-network: the tiktoken encoding cache is pinned to the
 committed repo blob so no test ever downloads from the OpenAI blob store.
+Importable checkpoint builders for the delivery tests live in tests/helpers.py.
 """
 
 import json

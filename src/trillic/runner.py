@@ -28,7 +28,7 @@ from trillic.clients.sidecar import (
     StubRefineClient,
 )
 from trillic.config import RunConfig
-from trillic.golden import GoldenItem, load_golden_set
+from trillic.golden import GoldenError, GoldenItem, load_golden_set
 from trillic.judge import RUBRIC_VERSION, rubric_sha256
 from trillic.native_tokens import NativeCounter, build_native_counter
 from trillic.quality import fact_recall, percentile, rounded_mean, text_token_f05
@@ -75,6 +75,7 @@ def run_eval(
     golden_path: Path | list[Path],
     out_root: Path,
     resume_from: Path | None = None,
+    expect_golden_sha: str | None = None,
 ) -> Path:
     """Run the evaluation sweep and write the run directory.
 
@@ -82,10 +83,15 @@ def run_eval(
     the per-type golden files; combined bytes in argv order are the run's
     golden identity). resume_from replays a prior run's gateway ledger —
     zero duplicate billing for content-identical work (issue #8).
+    expect_golden_sha (issue #12) is the frozen-reference assertion: it
+    must match the golden digest (same single source as the report's
+    golden.sha256) and is checked BEFORE any sidecar/gateway call, so a
+    drifted exam fails without spending money or leaving a run dir.
     """
     golden_paths = [golden_path] if isinstance(golden_path, Path) else list(golden_path)
     items, golden_bytes = load_golden_set(golden_paths)
     golden_sha = hashlib.sha256(golden_bytes).hexdigest()
+    _assert_expected_golden_sha(expect_golden_sha, golden_sha)
     counter = TokenCounter(config.tiktoken_encoding)
     native = build_native_counter(
         config.native_flavor, resolve_native_vocab(config, config_path)
@@ -185,6 +191,28 @@ def run_eval(
     if journal is not None:
         journal.close()
     return run_dir
+
+
+def _assert_expected_golden_sha(expected: str | None, actual: str) -> None:
+    """Frozen-reference gate (issue #12): same caliber as the report's
+    golden.sha256; mismatch = the exam drifted, refuse to run."""
+    if expected is None:
+        return
+    normalized = expected.strip().lower()
+    if normalized.startswith("sha256:"):
+        normalized = normalized[len("sha256:"):]
+    if len(normalized) != 64 or any(c not in "0123456789abcdef" for c in normalized):
+        raise GoldenError(
+            f"--expect-golden-sha must be a 64-hex sha256 (got {expected!r}); "
+            f"the run report's golden.sha256 is the source of truth"
+        )
+    if normalized != actual:
+        raise GoldenError(
+            "golden set drifted from the frozen reference — refusing to run "
+            f"before any gateway call: expected sha256 {normalized}, actual {actual}; "
+            "either restore the frozen golden set or re-pin the reference "
+            "deliberately (no run directory was created)"
+        )
 
 
 def _refine_all(

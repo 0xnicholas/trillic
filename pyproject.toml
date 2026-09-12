@@ -19,6 +19,13 @@ trillic = "trillic.cli:main"
 dev = [
     "pytest>=8.0",
 ]
+# `delivery verify` load layer (issue #14): real model instantiation for
+# the .bert / offsets runtime assertions. Optional by design — the static
+# layer and the whole test suite stay green without it (no torch in CI).
+load = [
+    "transformers>=4.44",
+    "torch>=2.2",
+]
 
 [build-system]
 requires = ["uv_build>=0.10.3,<0.11.0"]

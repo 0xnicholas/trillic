@@ -14,6 +14,16 @@ from trillic import __version__
 from trillic.clients.gateway import GatewayError
 from trillic.clients.sidecar import RefineError
 from trillic.config import ConfigError, load_config
+from trillic.delivery import (
+    DeliveryError,
+    pack_checkpoint,
+    print_pack_summary,
+    print_verify_summary,
+    verify_checkpoint,
+    verify_error_message,
+    verify_report_json,
+    DEFAULT_DRAFT_PATH,
+)
 from trillic.dialogue import (
     DialogueError,
     build_dialogue_entries,
@@ -66,6 +76,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--resume-from", type=Path, default=None,
         help="prior run dir whose gateway ledger to replay (content-addressed; "
         "identical work is never re-billed)",
+    )
+    run_parser.add_argument(
+        "--expect-golden-sha", default=None, metavar="SHA256",
+        help="frozen-reference assertion: fail before any gateway call unless "
+        "the golden content digest matches (same caliber as the run report's "
+        "golden.sha256); accepts an optional 'sha256:' prefix",
     )
 
     sizing_parser = eval_sub.add_parser(
@@ -204,6 +220,47 @@ def build_parser() -> argparse.ArgumentParser:
         help="family=seed pairs, e.g. support_ticket=101,vendor_procurement=101",
     )
     dialogue_build_parser.add_argument("--out", required=True, type=Path)
+
+    delivery_parser = subparsers.add_parser(
+        "delivery",
+        help="delivery capability (drop-in contract verify, artifact pack)",
+    )
+    delivery_sub = delivery_parser.add_subparsers(dest="delivery_command", required=True)
+
+    delivery_verify_parser = delivery_sub.add_parser(
+        "verify",
+        help="check a candidate checkpoint against the drop-in contract",
+    )
+    delivery_verify_parser.add_argument(
+        "checkpoint", type=Path,
+        help="candidate checkpoint directory (config.json + tokenizer assets)",
+    )
+    delivery_verify_parser.add_argument(
+        "--report", type=Path, default=None,
+        help="write the machine-readable JSON verify report to this path",
+    )
+    delivery_verify_parser.add_argument(
+        "--static-only", action="store_true",
+        help="skip the load layer (heavy-deps instantiation) entirely",
+    )
+
+    delivery_pack_parser = delivery_sub.add_parser(
+        "pack",
+        help="assemble the delivery form (sha256 manifest + integration pack)",
+    )
+    delivery_pack_parser.add_argument(
+        "checkpoint", type=Path,
+        help="candidate checkpoint directory (must pass delivery verify)",
+    )
+    delivery_pack_parser.add_argument(
+        "--out", required=True, type=Path,
+        help="output directory for the pack (must not already exist)",
+    )
+    delivery_pack_parser.add_argument(
+        "--draft", type=Path, default=DEFAULT_DRAFT_PATH,
+        help=f"integration pack draft to render (default: {DEFAULT_DRAFT_PATH} "
+        "from the repo root)",
+    )
     return parser
 
 
@@ -215,6 +272,15 @@ def main(argv: list[str] | None = None) -> int:
         return _eval_run(args)
     if args.command == "eval" and args.eval_command == "sizing":
         return _eval_sizing(args)
+    if args.command == "delivery":
+        try:
+            if args.delivery_command == "verify":
+                return _delivery_verify(args)
+            if args.delivery_command == "pack":
+                return _delivery_pack(args)
+        except (DeliveryError, OSError, ValueError) as e:
+            print(f"error: {e}", file=sys.stderr)
+            return _ERROR_EXIT_CODE
     if args.command == "golden":
         try:
             if args.golden_command == "validate":
@@ -255,6 +321,7 @@ def _eval_run(args: argparse.Namespace) -> int:
             golden_path=list(args.golden),
             out_root=args.out,
             resume_from=args.resume_from,
+            expect_golden_sha=args.expect_golden_sha,
         )
     except (
         ConfigError,
@@ -351,6 +418,27 @@ def _print_sizing(report: dict) -> None:
             f"  {name}: n={stats['n_observed']}, "
             f"mean delta {stats['mean_delta']:+.4f}, {need}"
         )
+
+
+def _delivery_verify(args: argparse.Namespace) -> int:
+    """Drop-in contract check: 0 = pass (unverified load layer included),
+    non-zero = contract violation."""
+    report = verify_checkpoint(args.checkpoint, include_load=not args.static_only)
+    if args.report is not None:
+        args.report.parent.mkdir(parents=True, exist_ok=True)
+        args.report.write_text(verify_report_json(report), encoding="utf-8")
+    print_verify_summary(report)
+    if report["overall"] != "pass":
+        print(verify_error_message(report), file=sys.stderr)
+        return _ERROR_EXIT_CODE
+    return 0
+
+
+def _delivery_pack(args: argparse.Namespace) -> int:
+    """Assemble the delivery form; verify failure refuses before writing."""
+    result = pack_checkpoint(args.checkpoint, args.out, draft_path=args.draft)
+    print_pack_summary(result)
+    return 0
 
 
 def _golden_validate(args: argparse.Namespace) -> int:

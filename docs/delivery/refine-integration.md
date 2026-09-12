@@ -7,6 +7,18 @@
 
 本包是产物包第五件:让宿主**照做即可接入**的单元,不是说明文档。
 
+本文件同时是**接入包草案**:`trillic delivery pack` 从被校验的 checkpoint
+目录渲染定稿(占位符 → 真实值,单一来源,零手工填入)。
+
+## 0. 本包对应产物(由 `delivery pack` 渲染)
+
+- 模型标识(`config.json` 的 `_name_or_path`,缺省取目录名):`{{MODEL_ID}}`
+- 模型标签(快照路径 / 指标标签用短名):`{{MODEL_TAG}}`
+- checkpoint 目录内容摘要:`{{CHECKPOINT_DIGEST}}`
+- 随附 `SHA256SUMS` 清单哈希:`{{SHA256SUMS_SHA256}}`
+- checkpoint 文件数:{{CHECKPOINT_FILE_COUNT}}(逐文件哈希见随附 `SHA256SUMS`)
+- 渲染 harness:trillic {{HARNESS_VERSION}}
+
 ## 1. drop-in 契约(产物校验清单)
 
 一次切换是否可行,先看这份清单——任何一条不满足,都要求宿主改 `refiner.py`,
@@ -21,7 +33,18 @@
 - [ ] 与现网同架构基底(mBERT-base 系列)→ 延迟档案与内存占用可直接对比;
 - [ ] 随附对照报告与延迟档案(阶段 5 产物包其余各件)。
 
-交付前在本仓跑一遍(离线、零网络):
+交付前在本仓跑一遍(离线、零网络,即本命令族的本体):
+
+```bash
+uv run trillic delivery verify <checkpoint dir>          # 静态层(默认依赖)
+uv run trillic delivery verify <checkpoint dir> \
+  --report verify.json                                   # + 机读报告落盘
+uv sync --group load                                     # 可选:加载层重依赖
+uv run trillic delivery verify <checkpoint dir>          # 含真实例化断言
+```
+
+静态层验架构类、标签语义与 tokenizer 资产;加载层(可选依赖组在场时)
+真实例化模型,断言 `.bert` 与运行时 offsets——即下述手工脚本的等价物:
 
 ```bash
 uv run python - <<'PY'
@@ -44,16 +67,16 @@ PY
 传输走私有 HF 仓,落盘为**本地快照**——运行时不再依赖 HF 可达性与凭据。
 
 ```
-sidecars/refine/models/trillic-v1/
+sidecars/refine/models/{{MODEL_TAG}}/
   config.json  model.safetensors  vocab.txt  tokenizer_config.json  ...
   SHA256SUMS                       # 逐文件校验清单
-sidecars/refine/models/models--microsoft--llmlingua-2-...   # 旧快照,原地保留
+sidecars/refine/models/models--microsoft--llmlingua-2-...   # 旧快照，原地保留
 ```
 
 ```bash
-huggingface-cli download <org>/trillic-v1 --revision <sha> \
-  --local-dir sidecars/refine/models/trillic-v1
-(cd sidecars/refine/models/trillic-v1 && shasum -a 256 -c SHA256SUMS)
+huggingface-cli download <org>/{{MODEL_TAG}} --revision <sha> \
+  --local-dir sidecars/refine/models/{{MODEL_TAG}}
+(cd sidecars/refine/models/{{MODEL_TAG}} && shasum -a 256 -c SHA256SUMS)
 ```
 
 旧快照目录**不删**:它就是回滚素材(见 §4 第 10 步)。
@@ -67,7 +90,7 @@ huggingface-cli download <org>/trillic-v1 --revision <sha> \
 ```diff
 -MODEL_ID = "microsoft/llmlingua-2-bert-base-multilingual-cased-meetingbank"
 +# Trillic v1 — local snapshot, sha256-verified (SHA256SUMS)
-+MODEL_ID = os.path.join(os.path.dirname(__file__), "models", "trillic-v1")
++MODEL_ID = os.path.join(os.path.dirname(__file__), "models", "{{MODEL_TAG}}")
 ```
 
 ```diff
@@ -150,7 +173,8 @@ pub fn record_refine_tokens(direction: &str, model: &str, count: u64) {
 
 ## 4. 切换 runbook
 
-1. 落盘快照并跑 §2 的 sha256 校验;
+1. 落盘快照并跑 §2 的 sha256 校验(`trillic delivery verify <快照目录>`
+   同步跑契约校验);
 2. 打 §3 的 patch(4 处 + 3.4 的 A/B 选择);
 3. 冷启动 sidecar(uvicorn);
 4. `GET /health` → `{"status":"ok","compressor":true}`(false = light mode,停);

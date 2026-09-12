@@ -105,6 +105,19 @@ uv run trillic eval run \
   冻结含漂移拒);中断恢复在两次真实网关停摆下验证(36 fresh /
   84 reused)。RAG 缺口 1 条:短答案子集(qasper/hotpotqa)机械派生
   要点质量不足、富答案 eval 半已耗尽,补齐需人工修剪(后续票)。
+- **交付能力族**(`trillic delivery *` + `eval run --expect-golden-sha`,issues
+  #10–#14):`delivery verify` 按 drop-in 契约逐条校验候选 checkpoint 目录
+  (架构类 / num_labels / id2label 0=drop、1=keep 语义 / fast tokenizer +
+  offsets 可用),产出内容寻址机读 JSON 报告 + 人读 stdout,违规非零退出,
+  每项违规指名契约项与候选动作;静态层默认依赖零网络可跑,加载层
+  (真实例化断言 `.bert` 属性与运行时 offsets)在可选依赖组
+  (`uv sync --group load`)缺席时显式标注“未验证”(三态:已验通过 /
+  未验证 / 违规,永不相混)。`delivery pack` 以 verify 通过为闸装配
+  交付形态:逐文件 `sha256sum -c` 兼容清单 + 接入包定稿(草案占位符
+  → 模型标识/目录摘要/清单哈希真实值,零手工填入),拒绝覆盖已存在
+  目录,同输入两次打包逐字节一致。`eval run --expect-golden-sha` 为
+  冻结引用断言:宿主 pinned 调用时考卷漂移在任何网关调用之前失败,
+  不产生 run 目录(与报告 golden.sha256 同源单一口径)。
 - **假桩注入**:sidecar(POST /refine)与网关客户端均为可注入协议,
   配置 `mode = "stub" | "http"` 切换;全部测试零网络。
 - **离线 tiktoken**:测试通过仓内缓存(`eval/assets/tiktoken_cache/`)
@@ -117,4 +130,5 @@ uv run trillic eval run \
 ## 状态
 
 阶段 1(评测基线)进行中:#2–#8 已落地(真链路冒烟、pilot 基线、定容
-50/类、golden 149 条);剩 #9 双 checkpoint 全量基线 + 冻结收官。
+50/类、golden 149 条);#10–#14 交付能力族已落地(drop-in 契约校验、
+产物包打包、冻结引用断言);剩 #9 双 checkpoint 全量基线 + 冻结收官。
