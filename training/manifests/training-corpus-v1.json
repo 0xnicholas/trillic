@@ -3,8 +3,8 @@
   "split_method": "sha1(context + NUL + input) sorted ascending; first ceil(n/2) -> eval half, remainder -> train half",
   "generated_by": {
     "tool": "trillic.corpus",
-    "repo_commit": "9f3cf68f00c8e0cba5d98dae0226f6c3624696c0",
-    "repo_dirty": false
+    "repo_commit": "362a94f27bde2a2e9af9c17cd597ca4d25735722",
+    "repo_dirty": true
   },
   "corpus": {
     "file": "training/corpus/longbench-train-v1.jsonl",
@@ -19,6 +19,7 @@
       "question",
       "task"
     ],
+    "v1_empty": true,
     "v1_policy": "question/task are reserved query-aware fields and are always empty in v1 (task-agnostic line); v2 fills them — schema fixed from day one (data-strategy 硬约束 3)"
   },
   "subsets": [

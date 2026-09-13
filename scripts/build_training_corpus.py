@@ -9,7 +9,8 @@ Pinned invocation for `trillic corpus build` + immediate full validation:
     train boundary, license + evidence trail, exclusions);
   - validates: schema, MeetingBank hard-reject, offline train-boundary
     re-proof, frozen-bytes sha256, and ZERO content overlap with the
-    frozen golden files (the exam's eval half).
+    frozen golden files (the exam's eval half; file list read from the
+    golden freeze record — the canonical golden identity).
 
 Zero gateway calls by construction: pure file transforms over _downloads/.
 """
@@ -22,17 +23,10 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 
 LB_MANIFEST = REPO / "eval" / "manifests" / "longbench.json"
+GOLDEN_FREEZE = REPO / "eval" / "manifests" / "golden-freeze.json"
 DATA_DIR = REPO / "_downloads" / "data"
 CORPUS_OUT = REPO / "training" / "corpus" / "longbench-train-v1.jsonl"
 MANIFEST_OUT = REPO / "training" / "manifests" / "training-corpus-v1.json"
-GOLDEN_FILES = [
-    REPO / "eval" / "golden" / "rag_pilot.jsonl",
-    REPO / "eval" / "golden" / "rag_scaled.jsonl",
-    REPO / "eval" / "golden" / "sysprompt_pilot.jsonl",
-    REPO / "eval" / "golden" / "sysprompt_scaled.jsonl",
-    REPO / "eval" / "golden" / "dialogue_pilot.jsonl",
-    REPO / "eval" / "golden" / "dialogue_scaled.jsonl",
-]
 
 
 def _repo_state() -> tuple[str | None, bool | None]:
@@ -51,40 +45,26 @@ def _repo_state() -> tuple[str | None, bool | None]:
 
 
 def main() -> int:
-    from trillic.corpus import (
-        build_training_entries,
-        build_training_manifest,
-        collect_corpus_errors,
-    )
-    from trillic.golden import load_golden
+    from trillic.corpus import collect_corpus_errors, golden_fingerprints, write_training_artifacts
 
     commit, dirty = _repo_state()
     lb_manifest = json.loads(LB_MANIFEST.read_text(encoding="utf-8"))
-    entries = build_training_entries(lb_manifest, data_dir=DATA_DIR)
-    CORPUS_OUT.parent.mkdir(parents=True, exist_ok=True)
-    CORPUS_OUT.write_text(
-        "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in entries),
-        encoding="utf-8",
-    )
-    training_manifest = build_training_manifest(
-        lb_manifest, CORPUS_OUT, repo_commit=commit, repo_dirty=dirty
-    )
-    # record the repo-relative identity, not the machine-specific absolute path
-    training_manifest["corpus"]["file"] = CORPUS_OUT.relative_to(REPO).as_posix()
-    MANIFEST_OUT.parent.mkdir(parents=True, exist_ok=True)
-    MANIFEST_OUT.write_text(
-        json.dumps(training_manifest, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
+    training_manifest = write_training_artifacts(
+        lb_manifest,
+        data_dir=DATA_DIR,
+        corpus_path=CORPUS_OUT,
+        manifest_path=MANIFEST_OUT,
+        repo_commit=commit,
+        repo_dirty=dirty,
+        # record the repo-relative identity, not the machine-specific path
+        record_file=CORPUS_OUT.relative_to(REPO).as_posix(),
     )
 
-    golden_fingerprints: dict[str, str] = {}
-    for path in GOLDEN_FILES:
-        for item in load_golden(path):
-            fingerprint = item.source.get("content_sha1")
-            if isinstance(fingerprint, str) and fingerprint.strip():
-                golden_fingerprints[fingerprint] = item.id
+    freeze = json.loads(GOLDEN_FREEZE.read_text(encoding="utf-8"))
+    golden_paths = [REPO / f for f in freeze["golden"]["files"]]
+    fingerprints = golden_fingerprints(golden_paths)
     errors = collect_corpus_errors(
-        CORPUS_OUT, registry=training_manifest, golden_fingerprints=golden_fingerprints
+        CORPUS_OUT, registry=training_manifest, golden_fingerprints=fingerprints
     )
     for error in errors:
         print(f"error: {error}", file=sys.stderr)
@@ -92,12 +72,12 @@ def main() -> int:
         return 1
 
     summary = {
-        "corpus": str(CORPUS_OUT.relative_to(REPO)),
+        "corpus": CORPUS_OUT.relative_to(REPO).as_posix(),
         "entries": training_manifest["corpus"]["entries"],
         "subsets": {s["name"]: s["entries"] for s in training_manifest["subsets"]},
         "excluded": [s["name"] for s in training_manifest["excluded_subsets"]],
-        "golden_fingerprints_checked": len(golden_fingerprints),
-        "manifest": str(MANIFEST_OUT.relative_to(REPO)),
+        "golden_fingerprints_checked": len(fingerprints),
+        "manifest": MANIFEST_OUT.relative_to(REPO).as_posix(),
         "repo_commit": commit,
         "repo_dirty": dirty,
     }

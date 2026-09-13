@@ -16,9 +16,9 @@ from trillic.clients.sidecar import RefineError
 from trillic.config import ConfigError, load_config
 from trillic.corpus import (
     CorpusError,
-    build_training_entries,
-    build_training_manifest,
     collect_corpus_errors,
+    golden_fingerprints,
+    write_training_artifacts,
 )
 from trillic.delivery import (
     DeliveryError,
@@ -507,26 +507,17 @@ def _delivery_pack(args: argparse.Namespace) -> int:
 def _corpus_build(args: argparse.Namespace) -> int:
     """train-half extraction: writes the corpus jsonl + its manifest."""
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
-    entries = build_training_entries(manifest, data_dir=args.data_dir)
-    args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(
-        "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in entries),
-        encoding="utf-8",
-    )
-    training_manifest = build_training_manifest(
+    training_manifest = write_training_artifacts(
         manifest,
-        args.out,
+        data_dir=args.data_dir,
+        corpus_path=args.out,
+        manifest_path=args.out_manifest,
         repo_commit=args.repo_commit,
         repo_dirty=args.repo_dirty,
     )
-    args.out_manifest.parent.mkdir(parents=True, exist_ok=True)
-    args.out_manifest.write_text(
-        json.dumps(training_manifest, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
     excluded = ", ".join(s["name"] for s in training_manifest["excluded_subsets"]) or "none"
     print(
-        f"{args.out}: {len(entries)} entries from "
+        f"{args.out}: {training_manifest['corpus']['entries']} entries from "
         f"{len(training_manifest['subsets'])} train-permitted subsets "
         f"(excluded: {excluded}); manifest: {args.out_manifest}"
     )
@@ -538,16 +529,17 @@ def _corpus_validate(args: argparse.Namespace) -> int:
     registry = None
     if args.training_manifest is not None:
         registry = json.loads(args.training_manifest.read_text(encoding="utf-8"))
-    golden_fingerprints = None
+    golden_fps = None
     if args.golden:
-        golden_fingerprints = {}
-        for path in args.golden:
-            for item in load_golden(path):
-                fingerprint = item.source.get("content_sha1")
-                if isinstance(fingerprint, str) and fingerprint.strip():
-                    golden_fingerprints[fingerprint] = item.id
+        golden_fps = golden_fingerprints(list(args.golden))
+    else:
+        print(
+            "note: no --golden given — the zero-overlap assertion is skipped "
+            "(pass the frozen golden files for the full discipline)",
+            file=sys.stderr,
+        )
     errors = collect_corpus_errors(
-        args.file, registry=registry, golden_fingerprints=golden_fingerprints
+        args.file, registry=registry, golden_fingerprints=golden_fps
     )
     if errors:
         for error in errors:
@@ -557,8 +549,8 @@ def _corpus_validate(args: argparse.Namespace) -> int:
         1 for line in args.file.read_text(encoding="utf-8").splitlines() if line.strip()
     )
     extras = []
-    if golden_fingerprints is not None:
-        extras.append(f"zero overlap with {len(golden_fingerprints)} golden fingerprints")
+    if golden_fps is not None:
+        extras.append(f"zero overlap with {len(golden_fps)} golden fingerprints")
     if registry is not None:
         extras.append("matches training manifest (sha256 + boundaries + counts)")
     suffix = f" ({'; '.join(extras)})" if extras else ""

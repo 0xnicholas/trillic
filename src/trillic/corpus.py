@@ -36,6 +36,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from trillic.golden import GoldenError, load_golden
 from trillic.longbench import (
     LongBenchError,
     load_verified_split,
@@ -118,6 +119,67 @@ def build_training_entries(manifest: dict, *, data_dir: Path) -> list[dict]:
     return entries
 
 
+def write_training_artifacts(
+    manifest: dict,
+    *,
+    data_dir: Path,
+    corpus_path: Path,
+    manifest_path: Path,
+    repo_commit: str | None = None,
+    repo_dirty: bool | None = None,
+    record_file: str | None = None,
+) -> dict:
+    """Build + write the corpus jsonl and its manifest in one step.
+
+    Shared by `trillic corpus build` and scripts/build_training_corpus.py
+    so the CLI and the pinned invocation can never drift apart.
+    record_file overrides the path string recorded in the manifest (the
+    script records the repo-relative identity instead of an absolute path).
+    Returns the training manifest dict.
+    """
+    entries = build_training_entries(manifest, data_dir=data_dir)
+    corpus_path = Path(corpus_path)
+    corpus_path.parent.mkdir(parents=True, exist_ok=True)
+    corpus_path.write_text(
+        "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in entries),
+        encoding="utf-8",
+    )
+    training_manifest = build_training_manifest(
+        manifest,
+        corpus_path,
+        repo_commit=repo_commit,
+        repo_dirty=repo_dirty,
+    )
+    if record_file is not None:
+        training_manifest["corpus"]["file"] = record_file
+    manifest_path = Path(manifest_path)
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        json.dumps(training_manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return training_manifest
+
+
+def golden_fingerprints(paths: list[Path]) -> dict[str, str]:
+    """Map content fingerprint -> golden entry id over golden jsonl files.
+
+    Shared by `corpus validate --golden` and the build script's zero-overlap
+    self-check; entries without source.content_sha1 are skipped (nothing to
+    intersect).
+    """
+    fingerprints: dict[str, str] = {}
+    try:
+        for path in paths:
+            for item in load_golden(path):
+                fingerprint = item.source.get("content_sha1")
+                if isinstance(fingerprint, str) and fingerprint.strip():
+                    fingerprints[fingerprint] = item.id
+    except GoldenError as e:
+        raise CorpusError(str(e)) from e
+    return fingerprints
+
+
 def build_training_manifest(
     manifest: dict,
     corpus_path: Path,
@@ -181,6 +243,7 @@ def build_training_manifest(
         },
         "query_aware": {
             "fields": ["question", "task"],
+            "v1_empty": True,
             "v1_policy": _V1_QUERY_POLICY,
         },
         "subsets": subsets,
@@ -225,6 +288,9 @@ def collect_corpus_errors(
 
     subsets_by_name = {s["name"]: s for s in (registry or {}).get("subsets", [])}
     excluded_by_name = {s["name"]: s for s in (registry or {}).get("excluded_subsets", [])}
+    # v1 manifests pin the "question/task always empty" policy (硬约束 3);
+    # a v2 manifest drops/flips the flag and the same validator accepts it.
+    require_empty_query = bool((registry or {}).get("query_aware", {}).get("v1_empty"))
     errors: list[str] = []
     seen_ids: set[str] = set()
     seen_fps: dict[str, str] = {}
@@ -253,6 +319,13 @@ def collect_corpus_errors(
         item = _validate_row(row, fail)
         if item is None:
             continue
+
+        if require_empty_query and (item.question.strip() or item.task.strip()):
+            fail(
+                "question/task",
+                "must be empty in a v1 corpus (query-aware reserved fields; "
+                "only the v2 extension fills them — see manifest query_aware)",
+            )
 
         if item.id in seen_ids:
             fail("id", f"duplicate id {item.id!r} (ids must be unique in the corpus)")
@@ -294,7 +367,9 @@ def collect_corpus_errors(
 
 
 def _validate_row(row: dict, fail) -> CorpusItem | None:
-    """Schema layer; returns None when the row is unusable."""
+    """Schema layer; collects every field error, returns the item only when
+    the row is fully usable downstream (fingerprint/id/count bookkeeping)."""
+    usable = True
     entry_id = row.get("id")
     if not isinstance(entry_id, str) or not entry_id.strip():
         fail("id", "must be a non-empty string")
@@ -302,9 +377,11 @@ def _validate_row(row: dict, fail) -> CorpusItem | None:
     prompt = row.get("prompt")
     if not isinstance(prompt, str) or not prompt.strip():
         fail("prompt", "must be a non-empty string")
+        usable = False
     load_type = row.get("load_type")
     if load_type not in LOAD_TYPES:
         fail("load_type", f"must be one of {list(LOAD_TYPES)}, got {load_type!r}")
+        usable = False
     for field in ("question", "task"):
         value = row.get(field)
         if not isinstance(value, str):
@@ -313,6 +390,7 @@ def _validate_row(row: dict, fail) -> CorpusItem | None:
                 "must be a string (query-aware reserved field: empty in v1, "
                 "filled by the v2 extension — never absent)",
             )
+            usable = False
     source = row.get("source")
     if not isinstance(source, dict):
         fail("source", "must be an object with dataset/subset/license/split/content_sha1")
@@ -329,6 +407,7 @@ def _validate_row(row: dict, fail) -> CorpusItem | None:
             "MeetingBank is excluded by hard constraint (base checkpoint "
             "training set — see docs/data-strategy.md 硬约束 1)",
         )
+        usable = False
     if source.get("split") != "train":
         fail(
             "source",
@@ -336,8 +415,9 @@ def _validate_row(row: dict, fail) -> CorpusItem | None:
             f"{source.get('split')!r} (the eval half belongs to golden)",
         )
         usable = False
-    if not usable or load_type not in LOAD_TYPES or not isinstance(prompt, str) or not prompt.strip():
+    if not usable:
         return None
+    assert isinstance(prompt, str) and isinstance(load_type, str)  # usable implies checked
     return CorpusItem(
         id=entry_id,
         load_type=load_type,

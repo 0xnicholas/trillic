@@ -91,14 +91,17 @@ class TestCorpusBuild:
 REPO_ROOT = Path(__file__).resolve().parents[1]
 COMMITTED_CORPUS = REPO_ROOT / "training" / "corpus" / "longbench-train-v1.jsonl"
 COMMITTED_MANIFEST = REPO_ROOT / "training" / "manifests" / "training-corpus-v1.json"
-COMMITTED_GOLDEN = [
-    REPO_ROOT / "eval" / "golden" / "rag_pilot.jsonl",
-    REPO_ROOT / "eval" / "golden" / "rag_scaled.jsonl",
-    REPO_ROOT / "eval" / "golden" / "sysprompt_pilot.jsonl",
-    REPO_ROOT / "eval" / "golden" / "sysprompt_scaled.jsonl",
-    REPO_ROOT / "eval" / "golden" / "dialogue_pilot.jsonl",
-    REPO_ROOT / "eval" / "golden" / "dialogue_scaled.jsonl",
-]
+
+
+def frozen_golden_paths() -> list[Path]:
+    """The frozen golden file list — single-sourced from the freeze record
+    (same authority scripts/build_training_corpus.py reads)."""
+    freeze = json.loads(
+        (REPO_ROOT / "eval" / "manifests" / "golden-freeze.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    return [REPO_ROOT / f for f in freeze["golden"]["files"]]
 
 
 class TestCommittedArtifacts:
@@ -109,7 +112,7 @@ class TestCommittedArtifacts:
         argv = [
             "corpus", "validate", str(COMMITTED_CORPUS),
             "--training-manifest", str(COMMITTED_MANIFEST),
-            "--golden", *[str(p) for p in COMMITTED_GOLDEN],
+            "--golden", *[str(p) for p in frozen_golden_paths()],
         ]
         assert main(argv) == 0, capsys.readouterr().err
         out = capsys.readouterr().out
@@ -242,3 +245,29 @@ class TestCorpusValidate:
         )
         assert main(["corpus", "validate", str(corpus)]) == 1
         assert "MeetingBank is excluded" in capsys.readouterr().err
+
+    def test_note_printed_when_golden_absent(self, tmp_path, capsys):
+        corpus = tmp_path / "corpus.jsonl"
+        write_jsonl(
+            corpus,
+            [
+                {
+                    "id": "train-x-00000000",
+                    "load_type": "rag",
+                    "prompt": "p",
+                    "question": "",
+                    "task": "",
+                    "source": {
+                        "dataset": "LongBench",
+                        "subset": "x",
+                        "license": "l",
+                        "split": "train",
+                        "content_sha1": "1" * 40,
+                    },
+                }
+            ],
+        )
+        assert main(["corpus", "validate", str(corpus)]) == 0
+        captured = capsys.readouterr()
+        assert "zero-overlap assertion is skipped" in captured.err
+        assert "ok (1 entries)" in captured.out

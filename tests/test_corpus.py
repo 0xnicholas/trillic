@@ -308,6 +308,24 @@ class TestRegistryChecks:
 
 
 class TestGoldenZeroOverlap:
+    def test_v1_empty_query_fields_enforced_when_registry_pins_it(self, built):
+        """硬约束 3, v1 恒空: a registry with query_aware.v1_empty rejects
+        non-empty question/task (a v2 registry drops the flag and the same
+        validator accepts filled fields)."""
+        corpus_path, training_manifest, entries = built
+        rows = [json.loads(json.dumps(e)) for e in entries]
+        rows[0]["question"] = "leaked question"
+        write_jsonl(corpus_path, rows)
+        errors = collect_corpus_errors(corpus_path, registry=training_manifest)
+        assert any(
+            "must be empty in a v1 corpus" in e and rows[0]["id"] in e for e in errors
+        ), errors
+
+        without_pin = json.loads(json.dumps(training_manifest))
+        without_pin["query_aware"].pop("v1_empty")
+        errors = collect_corpus_errors(corpus_path, registry=without_pin)
+        assert not any("must be empty in a v1 corpus" in e for e in errors)
+
     def test_disjoint_fingerprints_pass(self, built, data_dir):
         corpus_path, _, _ = built
         rows = load_subset_rows(data_dir / "hotpotqa_e.jsonl")
