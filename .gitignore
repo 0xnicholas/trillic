@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 .venv/
+.venv-train/
 .pytest_cache/
 
 # Evaluation run outputs (immutable artifacts, never committed)

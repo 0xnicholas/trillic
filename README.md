@@ -145,6 +145,15 @@ uv run trillic eval run \
 - **LongBench 数据**不入仓(`_downloads/` 已 gitignore);用
   `curl -L <subsets.toml 里的 source_url> -o _downloads/longbench-data.zip`
   重新下载并解压子集文件后,可重生成 manifest 与起草。
+- **训练环境**:项目 venv 与 CI 刻意无 torch(与 delivery 加载层同一
+  姿态);微调走专用 `.venv-train`(Python 3.12 + torch 2.2.2 /
+  transformers 4.57.6,与宿主 sidecar 同钉 — macOS x86_64 最后一条
+  torch 轮子线)。`scripts/train_pilot.py` 自动 bootstrap 并重入:
+  数据集字节先对照蒸馏 manifest 校验,`trillic train run` 产出
+  checkpoint + run-record + verify-report 三件套;种子/超参/数据
+  sha256/基底 revision 全钉进 run record;产物必须过 delivery verify
+  两层,否则命令失败(day-one drop-in);同 identity 重跑 = 原地
+  re-pin(byte-identical)。
 
 ## 状态
 
@@ -170,6 +179,15 @@ v1 锁定 mBERT-base 底座,验收对比基线 = 冻结基线。
   断点恢复在真网关上实测(杀于 3 chunk 后重跑:296 fresh / 3 reused,
   零重复计费);真网关计费 299 次 ≈ 3×10²(内部账本可核)
 - #19 训练 plumbing:pilot 微调打通 + drop-in 契约(不做质量声称)
+  ✅ 已落地:`trillic train run` + `scripts/train_pilot.py`(自举专用
+  `.venv-train`:py3.12 + torch 2.2.2 / transformers 4.57.6,与宿主
+  sidecar 同钉);pilot-v1(255 条)→ mBERT-base 微调 349 窗 / 132 步,
+  checkpoint 过 delivery verify 双层(静态 + 加载:`.bert` 属性、fast
+  tokenizer offsets、id2label);run record 钉死种子/超参/数据
+  sha256/基底 revision,同输入双跑 byte-identical(checkpoint digest /
+  run-record 均一致,实测);golden 冒烟 149 条过真 sidecar
+  (`COMPRESSION_MODEL_ID` 机制,零宿主改动)——结果全部标注
+  plumbing-only,不进对照报告(冒烟目录含 PLUMBING-ONLY.md)
 - #20 大规模蒸馏 + 训练集冻结 + 阶段 2 出口核销(定容决策后全量花费,
   阶段 3 开工门)
 

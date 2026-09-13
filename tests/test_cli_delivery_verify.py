@@ -4,7 +4,8 @@ Black-box CLI tests: exit codes, stdout summary, machine-readable JSON
 report, content-addressed checkpoint identity. Fixtures are hand-built
 minimal checkpoint directories (default dependencies only, zero network):
 one fully compliant, plus one single-point violation per contract item.
-Checkpoint fixture builders live in conftest (shared with the pack tests).
+Checkpoint fixture builders live in tests/helpers.py (shared with the
+pack and training-line tests).
 """
 
 import json
@@ -38,6 +39,13 @@ def run_verify(directory: Path, *extra: str) -> int:
 @pytest.fixture
 def compliant(tmp_path) -> Path:
     return make_checkpoint(tmp_path, "valid-ckpt")
+
+
+pytestmark = pytest.mark.skipif(
+    load_deps_available(),
+    reason="synthetic checkpoints exercise the unverified-load path; "
+    "with real heavy deps the load layer (correctly) rejects them",
+)
 
 
 class TestCompliantCheckpoint:

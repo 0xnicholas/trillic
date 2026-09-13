@@ -222,3 +222,23 @@ class TestValidation:
         assert not any(
             any(b in field.name for b in banned) for field in dataclasses.fields(RunConfig)
         )
+
+
+class TestClaim:
+    """The provenance-fence field (issue #19): a config-declared claim
+    banner rides verbatim into the run report."""
+
+    def test_claim_parsed_and_snapshotted(self, tmp_path):
+        config = load_config(
+            write_config(tmp_path, 'claim = "plumbing-only: no quality claims"\n')
+        )
+        assert config.claim == "plumbing-only: no quality claims"
+        assert config.snapshot()["claim"] == config.claim
+
+    def test_claim_defaults_to_empty(self, tmp_path):
+        assert load_config(write_config(tmp_path, "")).claim == ""
+
+    def test_non_string_claim_rejected(self, tmp_path):
+        path = write_config(tmp_path, "claim = 42\n")
+        with pytest.raises(ConfigError, match="claim"):
+            load_config(path)

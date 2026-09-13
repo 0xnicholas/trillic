@@ -1,0 +1,37 @@
+# Plumbing smoke (issue #19): the pilot fine-tune through the REAL host
+# sidecar — the sanctioned mechanism only (COMPRESSION_MODEL_ID env,
+# compressor.py:16; zero host-repo changes). Gateway is stub: the answer
+# and judge legs are mechanical, so the quality deltas are meaningless BY
+# CONSTRUCTION — this run proves the checkpoint loads and compresses in
+# the production shape, nothing more.
+#
+# PLUMBING-ONLY: results must be marked plumbing-only and must not enter
+# any comparison report or acceptance reading (roadmap stage 2; the
+# trained model carries no quality claim).
+#
+# Start the sidecar from the host repo first (absolute path — the
+# sidecar resolves relative MODEL_IDs against its own CWD):
+#   cd ../tokencamp-pro/sidecars/refine && \
+#   COMPRESSION_MODEL_ID=<repo>/runs/train/pilot-v1/checkpoint \
+#     .venv/bin/uvicorn server:app --host 127.0.0.1 --port 9797
+# then: trillic eval run --config eval/configs/smoke149-pilot-plumbing.toml \
+#        --golden eval/golden/{rag,sysprompt,dialogue}_{pilot,scaled}.jsonl
+
+name = "smoke149-pilot-plumbing"
+claim = "plumbing-only smoke (issue #19): no quality claims — these numbers are not comparison evidence and must not enter any acceptance reading (roadmap stage 2)"
+
+[run]
+aggressiveness = 0.2  # single level — a smoke, not a sweep
+
+[sidecar]
+mode = "http"
+url = "http://127.0.0.1:9797"
+rewrite = false
+compress = true
+
+[gateway]
+mode = "stub"
+
+[metrics]
+native_flavor = "wordpiece"
+native_vocab = "../assets/tokenizers/bert-base-multilingual-cased-vocab.txt"

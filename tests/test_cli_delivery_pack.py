@@ -19,6 +19,14 @@ from helpers import VALID_CHECKPOINT_CONFIG, make_checkpoint
 
 from trillic import __version__
 from trillic.cli import main
+from trillic.delivery import load_deps_available
+
+pytestmark = pytest.mark.skipif(
+    load_deps_available(),
+    reason="synthetic checkpoints exercise the unverified-load path; "
+    "with real heavy deps the load layer (correctly) rejects them",
+)
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DRAFT = REPO_ROOT / "docs" / "delivery" / "refine-integration.md"

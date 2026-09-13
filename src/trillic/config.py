@@ -18,6 +18,10 @@ class ConfigError(Exception):
 @dataclass(frozen=True)
 class RunConfig:
     name: str = "run"
+    # free-text provenance banner carried verbatim into the run report —
+    # e.g. the plumbing-only claim that fences pilot-training smokes out
+    # of every comparison reading (issue #19, roadmap stage 2)
+    claim: str = ""
     seed: int = 0
     tiktoken_encoding: str = "cl100k_base"
     aggressiveness: float = 0.2
@@ -89,10 +93,12 @@ def load_config(path: Path) -> RunConfig:
 
     values: dict = {}
     for key in data:
-        if key != "name" and key not in _SECTION_FIELDS:
+        if key not in ("name", "claim") and key not in _SECTION_FIELDS:
             raise ConfigError(f"{path}: unknown key {key!r}")
     if "name" in data:
         values["name"] = data["name"]
+    if "claim" in data:
+        values["claim"] = data["claim"]
 
     for section, fields in _SECTION_FIELDS.items():
         section_data = data.get(section, {})
@@ -121,6 +127,8 @@ def _validate(config: RunConfig, path: Path) -> None:
         raise ConfigError(
             f"{path}: name must match {_NAME_RE.pattern} (filesystem-safe), got {config.name!r}"
         )
+    if not isinstance(config.claim, str):
+        raise ConfigError(f"{path}: claim must be a string, got {config.claim!r}")
     if not 0.0 <= config.aggressiveness <= 1.0:
         raise ConfigError(
             f"{path}: run.aggressiveness must be within [0, 1], got {config.aggressiveness}"

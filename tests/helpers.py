@@ -1,6 +1,7 @@
-"""Shared non-fixture helpers for the delivery-capability tests.
+"""Shared non-fixture helpers for the test suite.
 
-Candidate-checkpoint builders live here (not conftest) so test files can
+Candidate-checkpoint builders (delivery) and labeled-dataset/tokenizer
+fixtures (training line) live here (not conftest) so test files can
 import them without the conftest-import anti-pattern. Everything builds
 with default dependencies only, zero network.
 """
@@ -123,3 +124,64 @@ def install_fake_load_deps(
     for name, module in (("transformers", fake_transformers), ("torch", fake_torch)):
         module.__spec__ = importlib.machinery.ModuleSpec(name, None)  # type: ignore[attr-defined]
         monkeypatch.setitem(sys.modules, name, module)
+
+
+# ── training line (issue #19) ────────────────────────────────────────────
+
+SIMPLE_PROMPT = "the quick brown fox"
+SIMPLE_TOKENS = [
+    ["the", 0, 3, 1],
+    ["quick", 4, 9, 0],
+    ["brown", 10, 15, 1],
+    ["fox", 16, 19, 0],
+]
+
+
+def training_row(row_id: str, prompt: str, tokens: list, load_type: str = "rag") -> dict:
+    """A minimal issue-18 labeled row (chunk text + word keep labels)."""
+    return {
+        "id": row_id,
+        "entry_id": row_id.split("#")[0],
+        "load_type": load_type,
+        "prompt": prompt,
+        "tokens": tokens,
+        "source": {
+            "dataset": "fixture", "subset": "t", "license": "original",
+            "split": "train", "content_sha1": "x",
+        },
+    }
+
+
+def training_word(prompt: str, text: str, keep: int) -> list:
+    start = prompt.index(text)
+    return [text, start, start + len(text), keep]
+
+
+def write_training_dataset(tmp_path: Path, rows: list[dict]) -> Path:
+    path = tmp_path / "labeled.jsonl"
+    path.write_text(
+        "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows),
+        encoding="utf-8",
+    )
+    return path
+
+
+def char_wordpiece_tokenizer(vocab_chars: str = "abcdefghijKQckunlopstwrfx.,") -> Tokenizer:
+    """A real fast tokenizer that splits every word into char subwords.
+
+    Char-level WordPiece forces multi-subword words (the alignment and
+    window-grouping cases) with exact offsets — deterministic, and the
+    same `tokenizers` machinery mBERT uses under transformers.
+    """
+    specials = ["[UNK]", "[CLS]", "[SEP]", "[PAD]"]
+    vocab: dict[str, int] = {tok: i for i, tok in enumerate(specials)}
+    for ch in vocab_chars:
+        vocab.setdefault(ch, len(vocab))
+        vocab.setdefault("##" + ch, len(vocab))  # continuation pieces
+    # a couple of multi-char pieces so grouping is not purely 1:1
+    vocab.update({"quick": len(vocab), "the": len(vocab) + 1})
+    tokenizer = Tokenizer(
+        models.WordPiece(vocab=vocab, unk_token="[UNK]", continuing_subword_prefix="##")
+    )
+    tokenizer.pre_tokenizer = pre_tokenizers.Whitespace()
+    return tokenizer

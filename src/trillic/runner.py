@@ -377,6 +377,9 @@ def _build_metrics(
         "schema_version": METRICS_SCHEMA_VERSION,
         "run_id": _run_id(config, config_raw, golden_raw_bytes, created_at),
         "created_at": created_at,
+        # provenance fence: a config-declared claim (e.g. plumbing-only)
+        # rides at the top level so no reader can miss it
+        **({"claim": config.claim} if config.claim else {}),
         "harness": {
             "name": "trillic",
             "version": __version__,

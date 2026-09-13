@@ -1,14 +1,17 @@
 """trillic CLI.
 
-Subcommand families (issue #1): `eval *` now; `golden *` covers schema
-validation, split manifests, and the three pilot generators (issues
-#3/#4/#5). All errors surface as `error: ...` on stderr with exit code 1.
+Subcommand families: `eval *` (runs + sizing), `golden *` (schema,
+manifests, pilot generators), `corpus *` (training layers), `delivery *`
+(drop-in contract verify / pack), `distill *` (teacher labeling), and
+`train *` (fine-tune plumbing). All errors surface as `error: ...` on
+stderr with exit code 1.
 """
 
 import argparse
 import hashlib
 import json
 import sys
+import time
 from pathlib import Path
 
 from trillic import __version__
@@ -65,6 +68,19 @@ from trillic.sysprompt import (
     make_review,
 )
 from trillic.task_quality import TaskQualityError
+from trillic.train import (
+    DEFAULT_BASE_MODEL,
+    DEFAULT_BATCH_SIZE,
+    DEFAULT_EPOCHS,
+    DEFAULT_LEARNING_RATE,
+    DEFAULT_MAX_GRAD_NORM,
+    DEFAULT_MAX_SEQ_LEN,
+    DEFAULT_SEED,
+    DEFAULT_WEIGHT_DECAY,
+    TrainError,
+    print_train_summary,
+    run_training,
+)
 
 _ERROR_EXIT_CODE = 1
 
@@ -503,6 +519,68 @@ def build_parser() -> argparse.ArgumentParser:
         "--repo-dirty", action="store_true",
         help="record that the repo was dirty at generation time",
     )
+
+    train_parser = subparsers.add_parser(
+        "train",
+        help="training line (labeled pilot dataset -> HF checkpoint)",
+    )
+    train_sub = train_parser.add_subparsers(dest="train_command", required=True)
+
+    train_run_parser = train_sub.add_parser(
+        "run",
+        help="fine-tune the base model on a labeled dataset (issue #19; "
+        "plumbing — no quality claims); the artifact must pass delivery "
+        "verify before the run record is written",
+    )
+    train_run_parser.add_argument(
+        "--dataset", required=True, type=Path,
+        help="labeled dataset jsonl (issue #18 output: word-labeled chunks)",
+    )
+    train_run_parser.add_argument(
+        "--out", required=True, type=Path,
+        help="output directory (must not exist, or match the run identity "
+        "for an in-place re-pin; holds checkpoint/ + run-record.json + "
+        "verify-report.json)",
+    )
+    train_run_parser.add_argument(
+        "--base-model", default=DEFAULT_BASE_MODEL,
+        help=f"HF base model id (default: {DEFAULT_BASE_MODEL})",
+    )
+    train_run_parser.add_argument(
+        "--base-revision", default=None, metavar="SHA",
+        help="base model revision pin (resolved and recorded when omitted; "
+        "pinned invocations always pass it explicitly)",
+    )
+    train_run_parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    train_run_parser.add_argument("--epochs", type=int, default=DEFAULT_EPOCHS)
+    train_run_parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
+    train_run_parser.add_argument(
+        "--learning-rate", type=float, default=DEFAULT_LEARNING_RATE
+    )
+    train_run_parser.add_argument(
+        "--weight-decay", type=float, default=DEFAULT_WEIGHT_DECAY
+    )
+    train_run_parser.add_argument(
+        "--max-grad-norm", type=float, default=DEFAULT_MAX_GRAD_NORM
+    )
+    train_run_parser.add_argument(
+        "--max-seq-len", type=int, default=DEFAULT_MAX_SEQ_LEN,
+        help="window cap incl. [CLS]/[SEP] (default: mBERT 512)",
+    )
+    train_run_parser.add_argument(
+        "--record-dataset", default=None, metavar="PATH",
+        help="repo-relative dataset identity recorded in the run record "
+        "(pinned invocations supply this so the record never carries "
+        "machine-specific absolute paths)",
+    )
+    train_run_parser.add_argument(
+        "--repo-commit", default=None,
+        help="repo commit to record (freeze discipline)",
+    )
+    train_run_parser.add_argument(
+        "--repo-dirty", action="store_true",
+        help="record that the repo was dirty at training time",
+    )
     return parser
 
 
@@ -519,6 +597,13 @@ def main(argv: list[str] | None = None) -> int:
             if args.distill_command == "run":
                 return _distill_run(args)
         except (DistillError, GatewayError, ValueError, OSError) as e:
+            print(f"error: {e}", file=sys.stderr)
+            return _ERROR_EXIT_CODE
+    if args.command == "train":
+        try:
+            if args.train_command == "run":
+                return _train_run(args)
+        except (TrainError, DeliveryError, ValueError, OSError) as e:
             print(f"error: {e}", file=sys.stderr)
             return _ERROR_EXIT_CODE
     if args.command == "delivery":
@@ -682,6 +767,32 @@ def _distill_run(args: argparse.Namespace) -> int:
         f"reused {gateway_block['calls_reused']}); "
         f"manifest: {args.out / 'manifest.json'}"
     )
+    return 0
+
+
+def _train_run(args: argparse.Namespace) -> int:
+    """Fine-tune on a labeled dataset; refuse to finish unless the
+    checkpoint passes delivery verify (drop-in contract, day one)."""
+    started = time.monotonic()
+    record = run_training(
+        dataset_path=args.dataset,
+        out_dir=args.out,
+        base_model=args.base_model,
+        base_revision=args.base_revision,
+        seed=args.seed,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        learning_rate=args.learning_rate,
+        weight_decay=args.weight_decay,
+        max_grad_norm=args.max_grad_norm,
+        max_seq_len=args.max_seq_len,
+        repo_commit=args.repo_commit,
+        repo_dirty=args.repo_dirty,
+        record_dataset=args.record_dataset,
+    )
+    print_train_summary(record)
+    print(f"elapsed: {time.monotonic() - started:.1f}s")
+    print(f"run record: {args.out / 'run-record.json'}")
     return 0
 
 
