@@ -382,8 +382,14 @@ def quality_control(
 
     dropped = sorted(
         [
-            *[{"id": r["id"], "dropped_by": "variation_rate", **{"metrics": r["metrics"]}} for r in vr_dropped],
-            *[{"id": r["id"], "dropped_by": "alignment_gap", **{"metrics": r["metrics"]}} for r in ag_dropped],
+            *[
+                {"id": r["id"], "dropped_by": "variation_rate", "metrics": r["metrics"]}
+                for r in vr_dropped
+            ],
+            *[
+                {"id": r["id"], "dropped_by": "alignment_gap", "metrics": r["metrics"]}
+                for r in ag_dropped
+            ],
         ],
         key=lambda r: r["id"],
     )
@@ -636,6 +642,8 @@ def run_distillation(
     concurrency: int = 1,
     repo_commit: str | None = None,
     repo_dirty: bool | None = None,
+    record_corpus: list[str] | None = None,
+    record_journal: str | None = None,
 ) -> dict:
     """Full pipeline: corpus in, labeled dataset + QC report + manifest out.
 
@@ -666,21 +674,35 @@ def run_distillation(
         )
 
     rows, files = load_corpus_rows(list(corpus_paths))
-    chunk_counts = {
-        row["id"]: len(chunk_text(row["prompt"], max_tokens=max_chunk_tokens, counter=counter))
+    if record_corpus is not None and len(record_corpus) != len(files):
+        raise DistillError(
+            f"record_corpus needs one identity per corpus file ({len(files)}), "
+            f"got {len(record_corpus)}"
+        )
+    # one chunking pass feeds both the budgeted selection (needs counts)
+    # and the job list (needs the chunks) — no second traversal
+    chunks_by_id: dict[str, list[TextChunk]] = {
+        row["id"]: chunk_text(
+            row["prompt"], max_tokens=max_chunk_tokens, counter=counter
+        )
         for row in rows
     }
+    chunk_counts = {row_id: len(chunks) for row_id, chunks in chunks_by_id.items()}
     selected = select_entries(rows, chunk_counts, chunk_budgets)
     if not selected:
         raise DistillError("chunk budgets selected zero entries — nothing to distill")
 
-    jobs: list[tuple[str, str]] = []
-    chunk_meta: list[tuple[dict, TextChunk]] = []
-    for row in selected:
-        for chunk in chunk_text(row["prompt"], max_tokens=max_chunk_tokens, counter=counter):
-            key = f"{row['id']}#c{chunk.index}"
-            jobs.append((key, chunk.text))
-            chunk_meta.append((row, chunk))
+    @dataclass(frozen=True)
+    class Job:
+        key: str
+        row: dict
+        chunk: TextChunk
+
+    jobs: list[Job] = [
+        Job(key=f"{row['id']}#c{chunk.index}", row=row, chunk=chunk)
+        for row in selected
+        for chunk in chunks_by_id[row["id"]]
+    ]
     lid = distill_ledger_id(
         corpus_shas=[f["sha256"] for f in files],
         teacher_model=teacher_model,
@@ -695,7 +717,7 @@ def run_distillation(
         compressed, comp_stats = _compress_chunks(
             gateway,
             teacher_model=teacher_model,
-            jobs=jobs,
+            jobs=[(job.key, job.chunk.text) for job in jobs],
             journal=journal,
             replay=replay,
             concurrency=concurrency,
@@ -704,24 +726,24 @@ def run_distillation(
         journal.close()
 
     labeled_rows = []
-    for (row, chunk), (key, _) in zip(chunk_meta, jobs):
-        entry = compressed[key]
+    for job in jobs:
+        entry = compressed[job.key]
         labeled = label_chunk(
-            chunk.text, entry["compressed_text"], window_size=window_size
+            job.chunk.text, entry["compressed_text"], window_size=window_size
         )
         labeled_rows.append(
             {
-                "id": key,
-                "entry_id": row["id"],
-                "load_type": row["load_type"],
-                "prompt": chunk.text,
-                "question": row.get("question", ""),
-                "task": row.get("task", ""),
+                "id": job.key,
+                "entry_id": job.row["id"],
+                "load_type": job.row["load_type"],
+                "prompt": job.chunk.text,
+                "question": job.row.get("question", ""),
+                "task": job.row.get("task", ""),
                 "chunk": {
-                    "index": chunk.index,
-                    "start": chunk.start,
-                    "end": chunk.end,
-                    "entry_chars": len(row["prompt"]),
+                    "index": job.chunk.index,
+                    "start": job.chunk.start,
+                    "end": job.chunk.end,
+                    "entry_chars": len(job.row["prompt"]),
                 },
                 "compressed_text": entry["compressed_text"],
                 "teacher_model_served": entry["served_model"],
@@ -729,7 +751,7 @@ def run_distillation(
                     [tok.text, tok.start, tok.end, int(tok.keep)] for tok in labeled.tokens
                 ],
                 "metrics": labeled.metrics,
-                "source": dict(row["source"]),
+                "source": dict(job.row["source"]),
             }
         )
 
@@ -766,7 +788,7 @@ def run_distillation(
         "calls_fresh": comp_stats["fresh"],
         "calls_reused": comp_stats["reused"],
         "ledger_id": lid,
-        "journal": str(journal_path),
+        "journal": record_journal if record_journal is not None else str(journal_path),
         # Distinct chunks the journal has EVER recorded for this ledger:
         # the billing surface stays auditable even when THIS run replayed
         # everything (artifact assembled at zero cost after the billed run).
@@ -808,7 +830,11 @@ def run_distillation(
             "repo_dirty": repo_dirty,
         },
         "corpus": {
-            "files": files,
+            "files": (
+                [dict(f, file=recorded) for f, recorded in zip(files, record_corpus)]
+                if record_corpus is not None
+                else files
+            ),
             "selection_rule": (
                 "per load_type, entries scan in corpus file order and join "
                 "iff their whole chunk count fits the remaining class budget "

@@ -6,6 +6,7 @@ validation, split manifests, and the three pilot generators (issues
 """
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -475,6 +476,22 @@ def build_parser() -> argparse.ArgumentParser:
         "(paper: 10%%)",
     )
     distill_run_parser.add_argument(
+        "--training-manifest", type=Path, nargs="+", default=None, metavar="PATH",
+        help="frozen training manifests, one per --corpus file in the same "
+        "order; each corpus file's sha256 must equal its manifest's recorded "
+        "corpus.sha256 (fails before any gateway call on drift)",
+    )
+    distill_run_parser.add_argument(
+        "--record-corpus", nargs="+", default=None, metavar="PATH",
+        help="repo-relative corpus identities recorded in the manifest "
+        "(one per --corpus file; pinned invocations supply these so the "
+        "artifact never carries machine-specific absolute paths)",
+    )
+    distill_run_parser.add_argument(
+        "--record-journal", default=None, metavar="PATH",
+        help="repo-relative crash-journal identity recorded in the manifest",
+    )
+    distill_run_parser.add_argument(
         "--tiktoken-encoding", default="cl100k_base",
         help="token counter for chunking (billing caliber; default cl100k_base)",
     )
@@ -596,20 +613,36 @@ def _eval_run(args: argparse.Namespace) -> int:
 
 def _distill_run(args: argparse.Namespace) -> int:
     """Distill a training corpus: labeled dataset + QC report + manifest."""
-    budgets: dict[str, int] = {}
-    for part in str(args.chunk_budget).split(","):
-        name, _, value = part.strip().partition("=")
-        if not name or not value:
+    budgets = _parse_kv_ints(
+        args.chunk_budget,
+        flag="--chunk-budget",
+        expect="CLASS=N, e.g. rag=150,system_prompt=60,dialogue=90",
+    )
+    # Optional frozen-reference gate (same posture as --expect-golden-sha):
+    # a drifted corpus fails BEFORE any gateway call, at zero cost.
+    if args.training_manifest is not None:
+        if len(args.training_manifest) != len(args.corpus):
             raise ValueError(
-                f"bad --chunk-budget item {part!r} (expected CLASS=N, e.g. "
-                "rag=150,system_prompt=60,dialogue=90)"
+                f"--training-manifest needs exactly one file per --corpus entry "
+                f"({len(args.corpus)}), got {len(args.training_manifest)}"
             )
-        try:
-            budgets[name] = int(value)
-        except ValueError:
-            raise ValueError(
-                f"bad --chunk-budget item {part!r}: {value!r} is not an integer"
-            ) from None
+        for corpus_path, manifest_path in zip(args.corpus, args.training_manifest):
+            frozen = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+            recorded = frozen.get("corpus", {}).get("sha256")
+            actual = hashlib.sha256(Path(corpus_path).read_bytes()).hexdigest()
+            if recorded != actual:
+                raise DistillError(
+                    f"{corpus_path} does not match its training manifest "
+                    f"({manifest_path}): {actual[:12]}… vs recorded "
+                    f"{str(recorded)[:12]}… — restore the frozen corpus or "
+                    "regenerate the manifest deliberately (no gateway call "
+                    "was made)"
+                )
+    if args.record_corpus is not None and len(args.record_corpus) != len(args.corpus):
+        raise ValueError(
+            f"--record-corpus needs exactly one identity per --corpus entry "
+            f"({len(args.corpus)}), got {len(args.record_corpus)}"
+        )
     gateway: GatewayClient
     if args.gateway_mode == "stub":
         gateway = StubGatewayClient()
@@ -634,6 +667,8 @@ def _distill_run(args: argparse.Namespace) -> int:
             concurrency=args.concurrency,
             repo_commit=args.repo_commit,
             repo_dirty=args.repo_dirty,
+            record_corpus=list(args.record_corpus) if args.record_corpus else None,
+            record_journal=args.record_journal,
         )
     finally:
         if isinstance(gateway, HttpGatewayClient):
@@ -927,14 +962,35 @@ def _golden_manifest(args: argparse.Namespace) -> int:
     return 0
 
 
-def _golden_build_rag(args: argparse.Namespace) -> int:
-    manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
-    counts = {}
-    for part in str(args.counts).split(","):
+def _parse_kv_ints(raw: str, *, flag: str, expect: str) -> dict[str, int]:
+    """Shared parser for NAME=N,NAME=N CLI specs (--counts, --seeds,
+    --chunk-budget): the fourth copy of this shape was one too many."""
+    parsed: dict[str, int] = {}
+    for part in str(raw).split(","):
         name, _, value = part.strip().partition("=")
         if not name or not value:
-            raise ValueError(f"bad --counts item {part!r} (expected subset=N)")
-        counts[name] = int(value)
+            raise ValueError(f"bad {flag} item {part!r} (expected {expect})")
+        try:
+            parsed[name] = int(value)
+        except ValueError:
+            raise ValueError(
+                f"bad {flag} item {part!r}: {value!r} is not an integer"
+            ) from None
+    return parsed
+
+
+def _parse_kv_int_lists(raw: str, *, flag: str, expect: str) -> dict[str, list[int]]:
+    """Accumulating variant for NAME=N specs where a name may repeat
+    (--seeds family=seed lists)."""
+    plan: dict[str, list[int]] = {}
+    for name, value in _parse_kv_ints(raw, flag=flag, expect=expect).items():
+        plan.setdefault(name, []).append(value)
+    return plan
+
+
+def _golden_build_rag(args: argparse.Namespace) -> int:
+    manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
+    counts = _parse_kv_ints(args.counts, flag="--counts", expect="subset=N")
     entries = build_rag_entries(
         manifest,
         data_dir=args.data_dir,
@@ -972,12 +1028,7 @@ def _golden_manifest_sysprompt(args: argparse.Namespace) -> int:
 
 def _golden_build_sysprompt(args: argparse.Namespace) -> int:
     families = load_families(args.families)
-    seed_plan: dict[str, list[int]] = {}
-    for part in str(args.seeds).split(","):
-        name, _, value = part.strip().partition("=")
-        if not name or not value:
-            raise ValueError(f"bad --seeds item {part!r} (expected family=seed)")
-        seed_plan.setdefault(name, []).append(int(value))
+    seed_plan = _parse_kv_int_lists(args.seeds, flag="--seeds", expect="family=seed")
     entries = build_sysprompt_entries(families, seed_plan)
     args.out.write_text(
         "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in entries),
@@ -1012,12 +1063,7 @@ def _golden_manifest_dialogue(args: argparse.Namespace) -> int:
 
 def _golden_build_dialogue(args: argparse.Namespace) -> int:
     families = load_dialogue_families(args.families)
-    seed_plan: dict[str, list[int]] = {}
-    for part in str(args.seeds).split(","):
-        name, _, value = part.strip().partition("=")
-        if not name or not value:
-            raise ValueError(f"bad --seeds item {part!r} (expected family=seed)")
-        seed_plan.setdefault(name, []).append(int(value))
+    seed_plan = _parse_kv_int_lists(args.seeds, flag="--seeds", expect="family=seed")
     entries = build_dialogue_entries(families, seed_plan)
     args.out.write_text(
         "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in entries),

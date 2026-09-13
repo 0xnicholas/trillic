@@ -29,9 +29,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture(scope="module")
 def counter() -> TokenCounter:
-    import os
-
-    os.environ["TIKTOKEN_CACHE_DIR"] = str(REPO_ROOT / "eval" / "assets" / "tiktoken_cache")
+    # conftest.py pins TIKTOKEN_CACHE_DIR repo-wide (zero-network suite)
     return TokenCounter("cl100k_base")
 
 

@@ -115,6 +115,11 @@ def main() -> int:
             concurrency=CONCURRENCY,
             repo_commit=commit,
             repo_dirty=dirty,
+            record_corpus=[
+                "training/corpus/longbench-train-v1.jsonl",
+                "training/corpus/synthetic-train-v1.jsonl",
+            ],
+            record_journal="runs/.ledger/ (content-addressed, gitignored runtime ledger)",
         )
     finally:
         gateway.close()

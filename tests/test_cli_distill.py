@@ -135,3 +135,71 @@ class TestDistillRun:
             "repo_commit": "deadbeef",
             "repo_dirty": True,
         }
+
+
+class TestFrozenManifestGate:
+    def test_drift_refuses_before_any_output(self, corpus_file, tmp_path, capsys):
+        manifest = {
+            "corpus": {"sha256": "0" * 64, "entries": len(CORPUS_ROWS)}
+        }
+        manifest_path = tmp_path / "frozen.json"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        code = main(
+            build_args(corpus_file, tmp_path, "--training-manifest", str(manifest_path))
+        )
+        assert code == 1
+        assert "does not match its training manifest" in capsys.readouterr().err
+        assert not (tmp_path / "out").exists()
+
+    def test_count_mismatch_rejected(self, corpus_file, tmp_path, capsys):
+        code = main(
+            build_args(
+                corpus_file, tmp_path,
+                "--corpus", str(corpus_file), str(corpus_file),
+                "--training-manifest", str(corpus_file),
+            )
+        )
+        assert code == 1
+        assert "one file per --corpus entry" in capsys.readouterr().err
+
+    def test_matching_sha_passes(self, corpus_file, tmp_path):
+        import hashlib
+
+        manifest = {
+            "corpus": {
+                "sha256": hashlib.sha256(corpus_file.read_bytes()).hexdigest(),
+                "entries": len(CORPUS_ROWS),
+            }
+        }
+        manifest_path = tmp_path / "frozen.json"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        assert main(
+            build_args(corpus_file, tmp_path, "--training-manifest", str(manifest_path))
+        ) == 0
+
+
+class TestRecordPaths:
+    def test_repo_relative_identities_recorded(self, corpus_file, tmp_path):
+        assert main(
+            build_args(
+                corpus_file, tmp_path,
+                "--record-corpus", "training/corpus/fixture.jsonl",
+                "--record-journal", "runs/.ledger/distill-fixture.jsonl",
+            )
+        ) == 0
+        manifest = json.loads((tmp_path / "out" / "manifest.json").read_text(encoding="utf-8"))
+        assert manifest["corpus"]["files"] == [
+            {
+                "file": "training/corpus/fixture.jsonl",
+                "sha256": manifest["corpus"]["files"][0]["sha256"],
+                "entries": manifest["corpus"]["files"][0]["entries"],
+            }
+        ]
+        assert manifest["gateway"]["journal"] == "runs/.ledger/distill-fixture.jsonl"
+
+    def test_record_count_mismatch_rejected(self, corpus_file, tmp_path, capsys):
+        code = main(
+            build_args(corpus_file, tmp_path, "--record-corpus", "a.jsonl", "b.jsonl")
+        )
+        assert code == 1
+        assert "one identity per --corpus entry" in capsys.readouterr().err
