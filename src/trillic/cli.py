@@ -11,7 +11,12 @@ import sys
 from pathlib import Path
 
 from trillic import __version__
-from trillic.clients.gateway import GatewayError
+from trillic.clients.gateway import (
+    GatewayClient,
+    GatewayError,
+    HttpGatewayClient,
+    StubGatewayClient,
+)
 from trillic.clients.sidecar import RefineError
 from trillic.config import ConfigError, load_config
 from trillic.corpus import (
@@ -37,6 +42,7 @@ from trillic.dialogue import (
     load_families as load_dialogue_families,
     make_review as make_dialogue_review,
 )
+from trillic.distill import DistillError, run_distillation
 from trillic.golden import GoldenError, collect_golden_errors, load_golden
 from trillic.judge import JudgeError
 from trillic.longbench import LongBenchError, build_manifest, build_rag_entries
@@ -44,6 +50,7 @@ from trillic.report import ReportWriterError
 from trillic.resume import ResumeError
 from trillic.runner import run_eval
 from trillic.sizing import sizing_report
+from trillic.tokens import TokenCounter
 from trillic.synthetic import (
     SyntheticError,
     collect_synthetic_errors,
@@ -397,6 +404,88 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"integration pack draft to render (default: {DEFAULT_DRAFT_PATH} "
         "from the repo root)",
     )
+
+    distill_parser = subparsers.add_parser(
+        "distill",
+        help="teacher distillation pipeline (corpus in, labeled data out)",
+    )
+    distill_sub = distill_parser.add_subparsers(dest="distill_command", required=True)
+
+    distill_run_parser = distill_sub.add_parser(
+        "run",
+        help="compress + label + quality-control a training corpus (issue #18)",
+    )
+    distill_run_parser.add_argument(
+        "--corpus", required=True, type=Path, nargs="+",
+        help="training corpus jsonl files (schema v1, issues #16/#17)",
+    )
+    distill_run_parser.add_argument(
+        "--chunk-budget", required=True, metavar="CLASS=N,CLASS=N",
+        help="per-load-type CHUNK budgets bounding gateway spend, e.g. "
+        "rag=150,system_prompt=60,dialogue=90 (entries join a class only if "
+        "their whole chunk count fits the remaining budget)",
+    )
+    distill_run_parser.add_argument(
+        "--teacher-model", required=True,
+        help="gateway teacher model id (pinned into the manifest)",
+    )
+    distill_run_parser.add_argument(
+        "--out", required=True, type=Path,
+        help="output directory (must not already contain a manifest.json — "
+        "outputs are versioned artifacts)",
+    )
+    distill_run_parser.add_argument(
+        "--ledger-root", type=Path, default=Path("runs"),
+        help="crash-journal root (default: ./runs; journals land under "
+        "<root>/.ledger/ and survive reruns)",
+    )
+    distill_run_parser.add_argument(
+        "--gateway-mode", choices=("stub", "http"), default="stub",
+        help="gateway transport (stub = zero-cost echo teacher, default)",
+    )
+    distill_run_parser.add_argument(
+        "--gateway-url", default="http://127.0.0.1:3005",
+        help="gateway base URL in http mode",
+    )
+    distill_run_parser.add_argument(
+        "--min-call-interval", type=float, default=0.0,
+        help="proactive pacing: minimum seconds between gateway call starts "
+        "(0 = unpaced)",
+    )
+    distill_run_parser.add_argument(
+        "--concurrency", type=int, default=1,
+        help="parallel teacher calls (execution detail only; journal "
+        "appends are lock-serialized)",
+    )
+    distill_run_parser.add_argument(
+        "--max-chunk-tokens", type=int, default=512,
+        help="chunk token cap (paper rule: <= 512; default 512)",
+    )
+    distill_run_parser.add_argument(
+        "--window-size", type=int, default=150,
+        help="fuzzy-matching window size in tokens (label_word.py default 150)",
+    )
+    distill_run_parser.add_argument(
+        "--vr-drop-fraction", type=float, default=0.05,
+        help="Variation Rate filter: drop this top fraction (paper: 5%%)",
+    )
+    distill_run_parser.add_argument(
+        "--ag-drop-fraction", type=float, default=0.10,
+        help="Alignment Gap filter: drop this top fraction of VR survivors "
+        "(paper: 10%%)",
+    )
+    distill_run_parser.add_argument(
+        "--tiktoken-encoding", default="cl100k_base",
+        help="token counter for chunking (billing caliber; default cl100k_base)",
+    )
+    distill_run_parser.add_argument(
+        "--repo-commit", default=None,
+        help="repo commit to record in the manifest (freeze discipline)",
+    )
+    distill_run_parser.add_argument(
+        "--repo-dirty", action="store_true",
+        help="record that the repo was dirty at generation time",
+    )
     return parser
 
 
@@ -408,6 +497,13 @@ def main(argv: list[str] | None = None) -> int:
         return _eval_run(args)
     if args.command == "eval" and args.eval_command == "sizing":
         return _eval_sizing(args)
+    if args.command == "distill":
+        try:
+            if args.distill_command == "run":
+                return _distill_run(args)
+        except (DistillError, GatewayError, ValueError, OSError) as e:
+            print(f"error: {e}", file=sys.stderr)
+            return _ERROR_EXIT_CODE
     if args.command == "delivery":
         try:
             if args.delivery_command == "verify":
@@ -495,6 +591,62 @@ def _eval_run(args: argparse.Namespace) -> int:
         print(f"error: {e}", file=sys.stderr)
         return _ERROR_EXIT_CODE
     print(str(run_dir))
+    return 0
+
+
+def _distill_run(args: argparse.Namespace) -> int:
+    """Distill a training corpus: labeled dataset + QC report + manifest."""
+    budgets: dict[str, int] = {}
+    for part in str(args.chunk_budget).split(","):
+        name, _, value = part.strip().partition("=")
+        if not name or not value:
+            raise ValueError(
+                f"bad --chunk-budget item {part!r} (expected CLASS=N, e.g. "
+                "rag=150,system_prompt=60,dialogue=90)"
+            )
+        try:
+            budgets[name] = int(value)
+        except ValueError:
+            raise ValueError(
+                f"bad --chunk-budget item {part!r}: {value!r} is not an integer"
+            ) from None
+    gateway: GatewayClient
+    if args.gateway_mode == "stub":
+        gateway = StubGatewayClient()
+    else:
+        gateway = HttpGatewayClient(
+            base_url=args.gateway_url,
+            min_call_interval=args.min_call_interval,
+        )
+    try:
+        manifest = run_distillation(
+            corpus_paths=list(args.corpus),
+            chunk_budgets=budgets,
+            gateway=gateway,
+            teacher_model=args.teacher_model,
+            out_dir=args.out,
+            ledger_root=args.ledger_root,
+            counter=TokenCounter(args.tiktoken_encoding),
+            window_size=args.window_size,
+            max_chunk_tokens=args.max_chunk_tokens,
+            vr_drop_fraction=args.vr_drop_fraction,
+            ag_drop_fraction=args.ag_drop_fraction,
+            concurrency=args.concurrency,
+            repo_commit=args.repo_commit,
+            repo_dirty=args.repo_dirty,
+        )
+    finally:
+        if isinstance(gateway, HttpGatewayClient):
+            gateway.close()
+    counts = manifest["counts"]
+    gateway_block = manifest["gateway"]
+    print(
+        f"{args.out}: {counts['labeled_kept']} labeled chunks kept "
+        f"({counts['dropped']} dropped of {counts['chunks']} compressed; "
+        f"gateway calls fresh {gateway_block['calls_fresh']} / "
+        f"reused {gateway_block['calls_reused']}); "
+        f"manifest: {args.out / 'manifest.json'}"
+    )
     return 0
 
 

@@ -123,6 +123,20 @@ uv run trillic eval run \
   目录,同输入两次打包逐字节一致。`eval run --expect-golden-sha` 为
   冻结引用断言:宿主 pinned 调用时考卷漂移在任何网关调用之前失败,
   不产生 run 目录(与报告 golden.sha256 同源单一口径)。
+- **teacher 蒸馏管线**(`trillic distill run`,issue #18):语料 jsonl 进 →
+  带标签数据集 + 质控报告 + manifest 出。LLMLingua-2 方法复用
+  (arXiv:2403.12968):语料分块(≤512 token,句界优先,无字丢失的字符
+  切片)→ 网关 teacher 压缩(prompt 模板版本化 `llmlingua2-paper-v1`,
+  sha256 钉进 manifest)→ 滑窗模糊匹配词级标注(label_word.py 移植,
+  窗口 150;偏差已记录:spacy 词形还原 → 确定性正则词 token,大小写
+  不敏感比较,逗号丢弃与参考实现一致)→ VR 5% / AG 10% 顺序过滤
+  (阈值与丢弃数进 manifest,确定性平局裁决)。计费面 = 网关 teacher:
+  逐 chunk 追加式 crash journal(内容寻址 ledger id = 语料 sha + teacher
+  + prompt sha + 分块参数),杀掉重跑只补未入账的 chunk(零重复计费);
+  输出目录含 manifest 即拒绝覆盖(版本化产物);`--chunk-budget`
+  按类预算直接钉死网关花费;断点恢复在真网关上实测(杀于 3 chunk 后
+  重跑:296 fresh / 3 reused)。重建入口:`scripts/distill_pilot.py`
+  (语料 sha 对冻结 manifest 校验后才放网关调用)。
 - **假桩注入**:sidecar(POST /refine)与网关客户端均为可注入协议,
   配置 `mode = "stub" | "http"` 切换;全部测试零网络。
 - **离线 tiktoken**:测试通过仓内缓存(`eval/assets/tiktoken_cache/`)
@@ -150,6 +164,11 @@ v1 锁定 mBERT-base 底座,验收对比基线 = 冻结基线。
   manifest/校验器与重建脚本 `scripts/build_synthetic_training.py`)
 - #18 teacher 蒸馏管线 walking skeleton:小规模 pilot(几百条,~10² 次
   网关调用)
+  ✅ 已落地:`trillic distill run` + `scripts/distill_pilot.py`,pilot
+  115 条(三类齐备)→ 299 chunk,带标签数据集 255 条 + 质控报告 +
+  manifest(teacher 型号 / prompt 版本与 sha256 / 匹配与过滤参数全钉死);
+  断点恢复在真网关上实测(杀于 3 chunk 后重跑:296 fresh / 3 reused,
+  零重复计费);真网关计费 299 次 ≈ 3×10²(内部账本可核)
 - #19 训练 plumbing:pilot 微调打通 + drop-in 契约(不做质量声称)
 - #20 大规模蒸馏 + 训练集冻结 + 阶段 2 出口核销(定容决策后全量花费,
   阶段 3 开工门)

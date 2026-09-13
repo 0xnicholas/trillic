@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "method": "LLMLingua-2 distillation pipeline (arXiv:2403.12968): teacher compression of <=512-token chunks -> deterministic word-level labels via sliding-window fuzzy matching -> VR/AG quality control",
+  "generated_by": {
+    "tool": "trillic.distill",
+    "repo_commit": "36f2013ecf76a2778ede6baacb58ca5860e080a4",
+    "repo_dirty": true
+  },
+  "corpus": {
+    "files": [
+      {
+        "file": "/Users/nicholasl/Documents/build-whatever/trillic/training/corpus/longbench-train-v1.jsonl",
+        "sha256": "40e58c6680be10bea9a9f5553b0fd3502089033789ccc3c3556e2e5d4693ca17",
+        "entries": 300
+      },
+      {
+        "file": "/Users/nicholasl/Documents/build-whatever/trillic/training/corpus/synthetic-train-v1.jsonl",
+        "sha256": "c6e48411309bb6ff5211bef39220db8498f0d28aefc9ddc2a2529ba1511c4eca",
+        "entries": 700
+      }
+    ],
+    "selection_rule": "per load_type, entries scan in corpus file order and join iff their whole chunk count fits the remaining class budget (oversized entries are skipped, never truncated); budgets bound the gateway spend by construction",
+    "chunk_budgets": {
+      "rag": 150,
+      "system_prompt": 60,
+      "dialogue": 90
+    }
+  },
+  "teacher": {
+    "model": "deepseek/deepseek-v4-pro",
+    "prompt_version": "llmlingua2-paper-v1",
+    "prompt_sha256": "84581c1256b84511eb6094bd7f59c49545874f7b96ae64e0466a3aeb0e75d3d4",
+    "prompt_template": "Compress the given text to short expressions, and such that you (GPT-4) can reconstruct it as close as possible to the original. Unlike the usual text compression, I need you to comply with the 5 conditions below:\n1. You can ONLY remove unimportant words.\n2. Do not reorder the original words.\n3. Do not change the original words.\n4. Do not use abbreviations or emojis.\n5. Do not add new words or symbols.\nCompress the origin aggressively by removing words only. Compress the origin as short as you can, while retaining as much information as possible. If you understand, please compress the following text:\n{text}\nThe compressed text is:",
+    "served_models": [
+      "deepseek/deepseek-v4-pro"
+    ]
+  },
+  "chunking": {
+    "max_tokens": 512,
+    "encoding": "cl100k_base",
+    "boundary_rule": "sentence-final punctuation + trailing whitespace, or newline runs; oversized spans hard-split at word boundaries; chunks are lossless char slices of the prompt"
+  },
+  "labeling": {
+    "algorithm": "llmlingua2 label_word.py port (sliding-window fuzzy matching)",
+    "tokenizer": "regex word tokens (internal ' and - kept whole), commas dropped, case-insensitive comparison — deviation from the reference's spacy lemmas: deterministic, zero-dependency",
+    "window_size": 150
+  },
+  "quality_control": {
+    "order": "variation_rate_then_alignment_gap",
+    "vr_drop_fraction": 0.05,
+    "ag_drop_fraction": 0.1,
+    "vr_threshold": 0.0106,
+    "ag_threshold": 0.0049,
+    "drop_counts": {
+      "variation_rate": 15,
+      "alignment_gap": 29
+    }
+  },
+  "gateway": {
+    "calls_fresh": 296,
+    "calls_reused": 3,
+    "ledger_id": "4fa4734ddd57fcec",
+    "journal": "/Users/nicholasl/Documents/build-whatever/trillic/runs/.ledger/distill-4fa4734ddd57fcec.jsonl"
+  },
+  "outputs": {
+    "labeled": {
+      "file": "labeled.jsonl",
+      "sha256": "37b8136cbc1ff968f9ad63083a06784b20b54b48356b5b9679140140a069bf73",
+      "rows": 255
+    },
+    "report": "report.json"
+  },
+  "counts": {
+    "corpus_entries": 1000,
+    "selected_entries": 115,
+    "chunks": 299,
+    "labeled_kept": 255,
+    "dropped": 44,
+    "by_load_type": {
+      "rag": {
+        "entries": 13,
+        "chunks": 149,
+        "kept": 132,
+        "dropped": 17
+      },
+      "system_prompt": {
+        "entries": 60,
+        "chunks": 60,
+        "kept": 40,
+        "dropped": 20
+      },
+      "dialogue": {
+        "entries": 42,
+        "chunks": 90,
+        "kept": 83,
+        "dropped": 7
+      }
+    }
+  }
+}

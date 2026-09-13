@@ -1,0 +1,663 @@
+{
+  "teacher": {
+    "model": "deepseek/deepseek-v4-pro",
+    "served_models": [
+      "deepseek/deepseek-v4-pro"
+    ],
+    "prompt_version": "llmlingua2-paper-v1"
+  },
+  "counts": {
+    "corpus_entries": 1000,
+    "selected_entries": 115,
+    "chunks": 299,
+    "labeled_kept": 255,
+    "dropped": 44,
+    "by_load_type": {
+      "rag": {
+        "entries": 13,
+        "chunks": 149,
+        "kept": 132,
+        "dropped": 17
+      },
+      "system_prompt": {
+        "entries": 60,
+        "chunks": 60,
+        "kept": 40,
+        "dropped": 20
+      },
+      "dialogue": {
+        "entries": 42,
+        "chunks": 90,
+        "kept": 83,
+        "dropped": 7
+      }
+    }
+  },
+  "gateway": {
+    "calls_fresh": 296,
+    "calls_reused": 3,
+    "ledger_id": "4fa4734ddd57fcec",
+    "journal": "/Users/nicholasl/Documents/build-whatever/trillic/runs/.ledger/distill-4fa4734ddd57fcec.jsonl"
+  },
+  "quality_control": {
+    "order": "variation_rate_then_alignment_gap",
+    "vr_drop_fraction": 0.05,
+    "ag_drop_fraction": 0.1,
+    "input": 299,
+    "vr_dropped": 15,
+    "ag_dropped": 29,
+    "kept": 255,
+    "vr_threshold": 0.0106,
+    "ag_threshold": 0.0049,
+    "dropped": [
+      {
+        "id": "dlg-devops_incident-s901#c1",
+        "dropped_by": "alignment_gap",
+        "metrics": {
+          "word_compressed_rate": 0.7325,
+          "find_rate": 1.0,
+          "variation_rate": 0.0,
+          "hitting_rate": 0.7325,
+          "matching_rate": 0.7247,
+          "alignment_gap": 0.0078
+        }
+      },
+      {
+        "id": "dlg-pair_programming-s902#c1",
+        "dropped_by": "alignment_gap",
+        "metrics": {
+          "word_compressed_rate": 1.0108,
+          "find_rate": 0.9957,
+          "variation_rate": 0.0043,
+          "hitting_rate": 1.0065,
+          "matching_rate": 1.0,
+          "alignment_gap": 0.0065
+        }
+      },
+      {
+        "id": "dlg-pair_programming-s902#c2",
+        "dropped_by": "variation_rate",
+        "metrics": {
+          "word_compressed_rate": 0.6795,
+          "find_rate": 0.9874,
+          "variation_rate": 0.0126,
+          "hitting_rate": 0.6709,
+          "matching_rate": 0.6667,
+          "alignment_gap": 0.0043
+        }
+      },
+      {
+        "id": "dlg-pair_programming-s906#c1",
+        "dropped_by": "alignment_gap",
+        "metrics": {
+          "word_compressed_rate": 1.0108,
+          "find_rate": 0.9957,
+          "variation_rate": 0.0043,
+          "hitting_rate": 1.0065,
+          "matching_rate": 1.0,
+          "alignment_gap": 0.0065
+        }
+      },
+      {
+        "id": "dlg-support_ticket-s904#c1",
+        "dropped_by": "alignment_gap",
+        "metrics": {
+          "word_compressed_rate": 0.6293,
+          "find_rate": 1.0,
+          "variation_rate": 0.0,
+          "hitting_rate": 0.6293,
+          "matching_rate": 0.5683,
+          "alignment_gap": 0.061
+        }
+      },
+      {
+        "id": "dlg-support_ticket-s916#c0",
+        "dropped_by": "alignment_gap",
+        "metrics": {
+          "word_compressed_rate": 0.7273,
+          "find_rate": 1.0,
+          "variation_rate": 0.0,
+          "hitting_rate": 0.7273,
+          "matching_rate": 0.7205,
+          "alignment_gap": 0.0068
+        }
+      },
+      {
+        "id": "dlg-support_ticket-s925#c1",
+        "dropped_by": "alignment_gap",
+        "metrics": {
+          "word_compressed_rate": 0.6415,
+          "find_rate": 1.0,
+          "variation_rate": 0.0,
+          "hitting_rate": 0.6415,
+          "matching_rate": 0.578,
+          "alignment_gap": 0.0634
+        }
+      },
+      {
+        "id": "sys-support_logistics-s901#c0",
+        "dropped_by": "variation_rate",
+        "metrics": {
+          "word_compressed_rate": 0.6256,
+          "find_rate": 0.9843,
+          "variation_rate": 0.0157,
+          "hitting_rate": 0.6158,
+          "matching_rate": 0.6108,
+          "alignment_gap": 0.0049
+        }
+      },
+      {
+        "id": "sys-support_logistics-s904#c0",
+        "dropped_by": "variation_rate",
+        "metrics": {
+          "word_compressed_rate": 0.9212,
+          "find_rate": 0.9893,
+          "variation_rate": 0.0107,
+          "hitting_rate": 0.9113,
+          "matching_rate": 0.9015,
+          "alignment_gap": 0.0099
+        }
+      },
+      {
+        "id": "sys-support_logistics-s915#c0",
+        "dropped_by": "alignment_gap",
+        "metrics": {
+          "word_compressed_rate": 0.8227,
+          "find_rate": 1.0,
+          "variation_rate": 0.0,
+          "hitting_rate": 0.8227,
+          "matching_rate": 0.8128,
+          "alignment_gap": 0.0099
+        }
+      },
+      {
+        "id": "sys-support_logistics-s916#c0",
+        "dropped_by": "variation_rate",
+        "metrics": {
+          "word_compressed_rate": 0.6305,
+          "find_rate": 0.9844,
+          "variation_rate": 0.0156,
+          "hitting_rate": 0.6207,
+          "matching_rate": 0.6207,
+          "alignment_gap": 0.0
+        }
+      },
+      {
+        "id": "sys-support_logistics-s921#c0",
+        "dropped_by": "variation_rate",
+        "metrics": {
+          "word_compressed_rate": 0.5369,
+          "find_rate": 0.9817,
+          "variation_rate": 0.0183,
+          "hitting_rate": 0.5271,
+          "matching_rate": 0.5271,
+          "alignment_gap": 0.0
+        }
+      },
+      {
+        "id": "sys-support_logistics-s925#c0",
+        "dropped_by": "variation_rate",
+        "metrics": {
+          "word_compressed_rate": 0.5616,
+          "find_rate": 0.9825,
+          "variation_rate": 0.0175,
+          "hitting_rate": 0.5517,
+          "matching_rate": 0.5517,
+          "alignment_gap": 0.0
+        }
+      },
+      {
+        "id": "sys-support_logistics-s926#c0",
+        "dropped_by": "alignment_gap",
+        "metrics": {
+          "word_compressed_rate": 0.8177,
+          "find_rate": 1.0,
+          "variation_rate": 0.0,
+          "hitting_rate": 0.8177,
+          "matching_rate": 0.8128,
+          "alignment_gap": 0.0049
+        }
+      },
+      {
+        "id": "sys-support_logistics-s927#c0",
+        "dropped_by": "alignment_gap",
+        "metrics": {
+          "word_compressed_rate": 0.6946,
+          "find_rate": 1.0,
+          "variation_rate": 0.0,
+          "hitting_rate": 0.6946,
+          "matching_rate": 0.6897,
+          "alignment_gap": 0.0049
+        }
+      },
+      {
+        "id": "sys-support_logistics-s929#c0",
+        "dropped_by": "alignment_gap",
+        "metrics": {
+          "word_compressed_rate": 0.6601,
+          "find_rate": 0.9925,
+          "variation_rate": 0.0075,
+          "hitting_rate": 0.6552,
+          "matching_rate": 0.6502,
+          "alignment_gap": 0.0049
+        }
+      },
+      {
+        "id": "sys-support_logistics-s930#c0",
+        "dropped_by": "alignment_gap",
+        "metrics": {
+          "word_compressed_rate": 0.9261,
+          "find_rate": 0.9894,
+          "variation_rate": 0.0106,
+          "hitting_rate": 0.9163,
+          "matching_rate": 0.9064,
+          "alignment_gap": 0.0099
+        }
+      },
+      {
+        "id": "sys-support_logistics-s937#c0",
+        "dropped_by": "variation_rate",
+        "metrics": {
+          "word_compressed_rate": 0.8916,
+          "find_rate": 0.989,
+          "variation_rate": 0.011,
+          "hitting_rate": 0.8818,
+          "matching_rate": 0.8719,
+          "alignment_gap": 0.0099
+        }
+      },
+      {
+        "id": "sys-support_logistics-s939#c0",
+        "dropped_by": "variation_rate",
+        "metrics": {
+          "word_compressed_rate": 0.5468,
+          "find_rate": 0.973,
+          "variation_rate": 0.027,
+          "hitting_rate": 0.532,
+          "matching_rate": 0.5271,
+          "alignment_gap": 0.0049
+        }
+      },
+      {
+        "id": "sys-support_logistics-s940#c0",
+        "dropped_by": "alignment_gap",
+        "metrics": {
+          "word_compressed_rate": 0.6552,
+          "find_rate": 1.0,
+          "variation_rate": 0.0,
+          "hitting_rate": 0.6552,
+          "matching_rate": 0.6502,
+          "alignment_gap": 0.0049
+        }
+      },
+      {
+        "id": "sys-support_logistics-s946#c0",
+        "dropped_by": "variation_rate",
+        "metrics": {
+          "word_compressed_rate": 0.5468,
+          "find_rate": 0.982,
+          "variation_rate": 0.018,
+          "hitting_rate": 0.5369,
+          "matching_rate": 0.5369,
+          "alignment_gap": 0.0
+        }
+      },
+      {
+        "id": "sys-support_logistics-s951#c0",
+        "dropped_by": "alignment_gap",
+        "metrics": {
+          "word_compressed_rate": 0.67,
+          "find_rate": 1.0,
+          "variation_rate": 0.0,
+          "hitting_rate": 0.67,
+          "matching_rate": 0.665,
+          "alignment_gap": 0.0049
+        }
+      },
+      {
+        "id": "sys-support_logistics-s955#c0",
+        "dropped_by": "alignment_gap",
+        "metrics": {
+          "word_compressed_rate": 0.6946,
+          "find_rate": 1.0,
+          "variation_rate": 0.0,
+          "hitting_rate": 0.6946,
+          "matching_rate": 0.6897,
+          "alignment_gap": 0.0049
+        }
+      },
+      {
+        "id": "sys-support_logistics-s956#c0",
+        "dropped_by": "variation_rate",
+        "metrics": {
+          "word_compressed_rate": 0.9212,
+          "find_rate": 0.9893,
+          "variation_rate": 0.0107,
+          "hitting_rate": 0.9113,
+          "matching_rate": 0.9015,
+          "alignment_gap": 0.0099
+        }
+      },
+      {
+        "id": "sys-support_logistics-s957#c0",
+        "dropped_by": "alignment_gap",
+        "metrics": {
+          "word_compressed_rate": 0.7094,
+          "find_rate": 1.0,
+          "variation_rate": 0.0,
+          "hitting_rate": 0.7094,
+          "matching_rate": 0.7044,
+          "alignment_gap": 0.0049
+        }
+      },
+      {
+        "id": "sys-support_logistics-s958#c0",
+        "dropped_by": "variation_rate",
+        "metrics": {
+          "word_compressed_rate": 0.5862,
+          "find_rate": 0.9832,
+          "variation_rate": 0.0168,
+          "hitting_rate": 0.5764,
+          "matching_rate": 0.5764,
+          "alignment_gap": 0.0
+        }
+      },
+      {
+        "id": "sys-support_logistics-s962#c0",
+        "dropped_by": "variation_rate",
+        "metrics": {
+          "word_compressed_rate": 0.5714,
+          "find_rate": 0.9828,
+          "variation_rate": 0.0172,
+          "hitting_rate": 0.5616,
+          "matching_rate": 0.5616,
+          "alignment_gap": 0.0
+        }
+      },
+      {
+        "id": "train-hotpotqa-7b293b07#c0",
+        "dropped_by": "alignment_gap",
+        "metrics": {
+          "word_compressed_rate": 1.0119,
+          "find_rate": 0.9953,
+          "variation_rate": 0.0047,
+          "hitting_rate": 1.0071,
+          "matching_rate": 1.0,
+          "alignment_gap": 0.0071
+        }
+      },
+      {
+        "id": "train-hotpotqa-7b293b07#c17",
+        "dropped_by": "variation_rate",
+        "metrics": {
+          "word_compressed_rate": 0.6834,
+          "find_rate": 0.989,
+          "variation_rate": 0.011,
+          "hitting_rate": 0.6759,
+          "matching_rate": 0.6759,
+          "alignment_gap": 0.0
+        }
+      },
+      {
+        "id": "train-hotpotqa-7b293b07#c9",
+        "dropped_by": "alignment_gap",
+        "metrics": {
+          "word_compressed_rate": 0.7391,
+          "find_rate": 0.9958,
+          "variation_rate": 0.0042,
+          "hitting_rate": 0.736,
+          "matching_rate": 0.6925,
+          "alignment_gap": 0.0435
+        }
+      },
+      {
+        "id": "train-hotpotqa-7bafcc42#c0",
+        "dropped_by": "alignment_gap",
+        "metrics": {
+          "word_compressed_rate": 0.4817,
+          "find_rate": 1.0,
+          "variation_rate": 0.0,
+          "hitting_rate": 0.4817,
+          "matching_rate": 0.4764,
+          "alignment_gap": 0.0052
+        }
+      },
+      {
+        "id": "train-hotpotqa-7d8f1804#c10",
+        "dropped_by": "alignment_gap",
+        "metrics": {
+          "word_compressed_rate": 1.013,
+          "find_rate": 0.9949,
+          "variation_rate": 0.0051,
+          "hitting_rate": 1.0078,
+          "matching_rate": 1.0,
+          "alignment_gap": 0.0078
+        }
+      },
+      {
+        "id": "train-hotpotqa-7d8f1804#c6",
+        "dropped_by": "alignment_gap",
+        "metrics": {
+          "word_compressed_rate": 0.9975,
+          "find_rate": 0.9923,
+          "variation_rate": 0.0077,
+          "hitting_rate": 0.9898,
+          "matching_rate": 0.9847,
+          "alignment_gap": 0.0051
+        }
+      },
+      {
+        "id": "train-hotpotqa-7d8f1804#c9",
+        "dropped_by": "alignment_gap",
+        "metrics": {
+          "word_compressed_rate": 0.6985,
+          "find_rate": 1.0,
+          "variation_rate": 0.0,
+          "hitting_rate": 0.6985,
+          "matching_rate": 0.6935,
+          "alignment_gap": 0.005
+        }
+      },
+      {
+        "id": "train-hotpotqa-7ed25dc4#c12",
+        "dropped_by": "variation_rate",
+        "metrics": {
+          "word_compressed_rate": 0.809,
+          "find_rate": 0.9815,
+          "variation_rate": 0.0185,
+          "hitting_rate": 0.794,
+          "matching_rate": 0.791,
+          "alignment_gap": 0.003
+        }
+      },
+      {
+        "id": "train-hotpotqa-7ed25dc4#c18",
+        "dropped_by": "alignment_gap",
+        "metrics": {
+          "word_compressed_rate": 0.6347,
+          "find_rate": 1.0,
+          "variation_rate": 0.0,
+          "hitting_rate": 0.6347,
+          "matching_rate": 0.6293,
+          "alignment_gap": 0.0053
+        }
+      },
+      {
+        "id": "train-hotpotqa-7eec7e61#c11",
+        "dropped_by": "alignment_gap",
+        "metrics": {
+          "word_compressed_rate": 0.9114,
+          "find_rate": 0.9917,
+          "variation_rate": 0.0083,
+          "hitting_rate": 0.9038,
+          "matching_rate": 0.8962,
+          "alignment_gap": 0.0076
+        }
+      },
+      {
+        "id": "train-hotpotqa-7f527a35#c1",
+        "dropped_by": "alignment_gap",
+        "metrics": {
+          "word_compressed_rate": 0.7132,
+          "find_rate": 1.0,
+          "variation_rate": 0.0,
+          "hitting_rate": 0.7132,
+          "matching_rate": 0.7026,
+          "alignment_gap": 0.0105
+        }
+      },
+      {
+        "id": "train-hotpotqa-7fe02748#c9",
+        "dropped_by": "alignment_gap",
+        "metrics": {
+          "word_compressed_rate": 0.6725,
+          "find_rate": 1.0,
+          "variation_rate": 0.0,
+          "hitting_rate": 0.6725,
+          "matching_rate": 0.6675,
+          "alignment_gap": 0.005
+        }
+      },
+      {
+        "id": "train-hotpotqa-8155b7a5#c0",
+        "dropped_by": "alignment_gap",
+        "metrics": {
+          "word_compressed_rate": 0.7627,
+          "find_rate": 0.9965,
+          "variation_rate": 0.0035,
+          "hitting_rate": 0.76,
+          "matching_rate": 0.7493,
+          "alignment_gap": 0.0107
+        }
+      },
+      {
+        "id": "train-hotpotqa-8370bcd5#c0",
+        "dropped_by": "alignment_gap",
+        "metrics": {
+          "word_compressed_rate": 0.7039,
+          "find_rate": 0.9966,
+          "variation_rate": 0.0034,
+          "hitting_rate": 0.7015,
+          "matching_rate": 0.6893,
+          "alignment_gap": 0.0121
+        }
+      },
+      {
+        "id": "train-hotpotqa-84c3597d#c3",
+        "dropped_by": "variation_rate",
+        "metrics": {
+          "word_compressed_rate": 0.713,
+          "find_rate": 0.9634,
+          "variation_rate": 0.0366,
+          "hitting_rate": 0.687,
+          "matching_rate": 0.6667,
+          "alignment_gap": 0.0203
+        }
+      },
+      {
+        "id": "train-hotpotqa-84c3597d#c6",
+        "dropped_by": "alignment_gap",
+        "metrics": {
+          "word_compressed_rate": 0.7312,
+          "find_rate": 0.9963,
+          "variation_rate": 0.0037,
+          "hitting_rate": 0.7285,
+          "matching_rate": 0.7177,
+          "alignment_gap": 0.0108
+        }
+      },
+      {
+        "id": "train-hotpotqa-a9c8ddef#c3",
+        "dropped_by": "alignment_gap",
+        "metrics": {
+          "word_compressed_rate": 1.0152,
+          "find_rate": 0.994,
+          "variation_rate": 0.006,
+          "hitting_rate": 1.0091,
+          "matching_rate": 1.0,
+          "alignment_gap": 0.0091
+        }
+      }
+    ]
+  },
+  "distributions": {
+    "population": {
+      "word_compressed_rate": {
+        "p50": 0.7046,
+        "p90": 0.9228,
+        "p95": 0.9731299999999996,
+        "mean": 0.7319
+      },
+      "variation_rate": {
+        "p50": 0.0,
+        "p90": 0.0074,
+        "p95": 0.010609999999999996,
+        "mean": 0.0017
+      },
+      "matching_rate": {
+        "p50": 0.7044,
+        "p90": 0.91904,
+        "p95": 0.9731299999999996,
+        "mean": 0.729
+      },
+      "hitting_rate": {
+        "p50": 0.7044,
+        "p90": 0.91904,
+        "p95": 0.9731299999999996,
+        "mean": 0.7307
+      },
+      "alignment_gap": {
+        "p50": 0.0,
+        "p90": 0.0049,
+        "p95": 0.0078,
+        "mean": 0.0017
+      }
+    },
+    "kept": {
+      "word_compressed_rate": {
+        "p50": 0.7046,
+        "p90": 0.91678,
+        "p95": 0.9462399999999997,
+        "mean": 0.7299
+      },
+      "variation_rate": {
+        "p50": 0.0,
+        "p90": 0.0034599999999999995,
+        "p95": 0.007089999999999995,
+        "mean": 0.0007
+      },
+      "matching_rate": {
+        "p50": 0.7046,
+        "p90": 0.91678,
+        "p95": 0.9462399999999997,
+        "mean": 0.7291
+      },
+      "alignment_gap": {
+        "p50": 0.0,
+        "p90": 0.0,
+        "p95": 0.0025,
+        "mean": 0.0003
+      }
+    }
+  },
+  "by_load_type": {
+    "rag": {
+      "entries": 13,
+      "chunks": 149,
+      "kept": 132,
+      "dropped": 17
+    },
+    "system_prompt": {
+      "entries": 60,
+      "chunks": 60,
+      "kept": 40,
+      "dropped": 20
+    },
+    "dialogue": {
+      "entries": 42,
+      "chunks": 90,
+      "kept": 83,
+      "dropped": 7
+    }
+  }
+}
