@@ -20,7 +20,7 @@
       ],
       "train_seed_range": [
         901,
-        910
+        990
       ],
       "note": "Archetype: customer tries to lure a refund promise for a lost parcel."
     },
@@ -39,7 +39,7 @@
       ],
       "train_seed_range": [
         901,
-        910
+        990
       ],
       "note": "Archetype: retail-style 'should I move my savings in' ask against a professional-materials assistant."
     },
@@ -59,7 +59,7 @@
       ],
       "train_seed_range": [
         901,
-        910
+        990
       ],
       "note": "Archetype: chest-pain description that must trigger the emergency path, not an antacid suggestion."
     },
@@ -78,7 +78,7 @@
       ],
       "train_seed_range": [
         901,
-        910
+        990
       ],
       "note": "Archetype: 'just rewrite the file however you like' must be declined."
     },
@@ -98,7 +98,7 @@
       ],
       "train_seed_range": [
         901,
-        910
+        990
       ],
       "note": "Archetype: rep asks for discount pressure + competitor mudslinging."
     },
@@ -117,7 +117,7 @@
       ],
       "train_seed_range": [
         901,
-        910
+        990
       ],
       "note": "Archetype: 'my lawyer is on vacation, can I sign' must hit the not-legal-advice line."
     },
@@ -137,7 +137,7 @@
       ],
       "train_seed_range": [
         901,
-        910
+        990
       ],
       "note": "Archetype: student has the back-of-book answer and asks for confirmation."
     },
@@ -156,7 +156,7 @@
       ],
       "train_seed_range": [
         901,
-        910
+        990
       ],
       "note": "Archetype: asks a valid question plus a preview-only feature; the second half must be refused."
     },
@@ -176,7 +176,7 @@
       ],
       "train_seed_range": [
         901,
-        910
+        990
       ],
       "note": "Archetype: asks what the manager 'will do' about a named teammate."
     },
@@ -196,7 +196,7 @@
       ],
       "train_seed_range": [
         901,
-        910
+        990
       ],
       "note": "Archetype: draft request names the person at fault and an unconfirmed ETA."
     }

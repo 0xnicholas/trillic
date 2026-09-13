@@ -14,6 +14,14 @@
 #                    never overlapping seeds)
 # The loader refuses any registry where the ranges intersect.
 #
+# Train segment width (issue #17): 901-990 is HEADROOM, not a quota. Slot
+# pools vary in size per family, so different seeds can render identical
+# prompts; the training builder scans train seeds in ascending order and
+# skips any whose rendered prompt duplicates an already-accepted train
+# entry or a golden (eval-side) entry — content stays distinct per family,
+# and low-diversity families simply contribute fewer entries. Eval seeds
+# remain 101-110, untouched.
+#
 # `trillic golden manifest-dialogue` merges this registry with the frozen
 # golden set into eval/manifests/dialogue.json. Edit here, regenerate there.
 #
@@ -34,7 +42,7 @@ fact_types = ["name", "date", "decision"]
 license = "original (ported from 0xnicholas/tokencamp compression/eval/conversation_gen.py — same author)"
 train_use = true
 eval_seed_range = [101, 110]
-train_seed_range = [901, 910]
+train_seed_range = [901, 990]
 note = "Ported scenario 1; optional deeper round (signing-secret rotation) spliced by seeded slot."
 
 [[family]]
@@ -44,7 +52,7 @@ fact_types = ["name", "date", "decision"]
 license = "original (ported from 0xnicholas/tokencamp compression/eval/conversation_gen.py — same author)"
 train_use = true
 eval_seed_range = [101, 110]
-train_seed_range = [901, 910]
+train_seed_range = [901, 990]
 note = "Ported scenario 2; carries code blocks (template braces escaped)."
 
 [[family]]
@@ -54,7 +62,7 @@ fact_types = ["name", "decision"]
 license = "original (ported from 0xnicholas/tokencamp compression/eval/conversation_gen.py — same author)"
 train_use = true
 eval_seed_range = [101, 110]
-train_seed_range = [901, 910]
+train_seed_range = [901, 990]
 note = "Ported scenario 3; decision-dense with numbers (queue cap, retention, effort)."
 
 [[family]]
@@ -64,7 +72,7 @@ fact_types = ["name", "decision"]
 license = "original (ported from 0xnicholas/tokencamp compression/eval/conversation_gen.py — same author)"
 train_use = true
 eval_seed_range = [101, 110]
-train_seed_range = [901, 910]
+train_seed_range = [901, 990]
 note = "Ported scenario 4; SQL join semantics carry the decisions."
 
 [[family]]
@@ -74,7 +82,7 @@ fact_types = ["name", "date", "decision"]
 license = "original (ported from 0xnicholas/tokencamp compression/eval/conversation_gen.py — same author)"
 train_use = true
 eval_seed_range = [101, 110]
-train_seed_range = [901, 910]
+train_seed_range = [901, 990]
 note = "Ported scenario 5; timestamps and revision ids are seeded."
 
 [[family]]
@@ -84,7 +92,7 @@ fact_types = ["name", "date", "decision"]
 license = "original (authored in this repo, no third-party content)"
 train_use = true
 eval_seed_range = [101, 110]
-train_seed_range = [901, 910]
+train_seed_range = [901, 990]
 note = "New family: clause-level decisions with dates, percentages, and named owner."
 
 [[family]]
@@ -94,7 +102,7 @@ fact_types = ["name", "date", "decision"]
 license = "original (authored in this repo, no third-party content)"
 train_use = true
 eval_seed_range = [101, 110]
-train_seed_range = [901, 910]
+train_seed_range = [901, 990]
 note = "New family: date-dense planning dialogue; recall task mirrors steering-committee briefing."
 
 [[family]]
@@ -104,7 +112,7 @@ fact_types = ["name", "date", "decision"]
 license = "original (authored in this repo, no third-party content)"
 train_use = true
 eval_seed_range = [101, 110]
-train_seed_range = [901, 910]
+train_seed_range = [901, 990]
 note = "New family: names + versions + dates; severity reasoning must survive."
 
 [[family]]
@@ -114,7 +122,7 @@ fact_types = ["name", "date", "decision"]
 license = "original (authored in this repo, no third-party content)"
 train_use = true
 eval_seed_range = [101, 110]
-train_seed_range = [901, 910]
+train_seed_range = [901, 990]
 note = "New family: compliance-grade precision — every grant parameter is a key fact."
 
 [[family]]
@@ -124,5 +132,5 @@ fact_types = ["name", "date", "decision"]
 license = "original (authored in this repo, no third-party content)"
 train_use = true
 eval_seed_range = [101, 110]
-train_seed_range = [901, 910]
+train_seed_range = [901, 990]
 note = "New family: the ship-review recap is the recall task."

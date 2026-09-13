@@ -144,7 +144,10 @@ v1 锁定 mBERT-base 底座,验收对比基线 = 冻结基线。
 
 - #16 训练语料:train 半侧提取 + 训练用途许可核查 + schema 定稿(零花费,
   ✅ 已落地:基础层 300 条 + manifest/校验器 + 配比设计 `docs/training-mix.md`)
-- #17 合成训练语料:场景族/种子分流 + 加重配比(零花费)
+- #17 合成训练语料:场景族/种子分流 + 加重配比(零花费,
+  ✅ 已落地:合成层 350 + 350 条,30/35/35 锚点配比达成,种子域/
+  内容双层零重叠断言,`training/corpus/synthetic-train-v1.jsonl` +
+  manifest/校验器与重建脚本 `scripts/build_synthetic_training.py`)
 - #18 teacher 蒸馏管线 walking skeleton:小规模 pilot(几百条,~10² 次
   网关调用)
 - #19 训练 plumbing:pilot 微调打通 + drop-in 契约(不做质量声称)

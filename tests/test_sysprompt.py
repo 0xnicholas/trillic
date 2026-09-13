@@ -182,7 +182,7 @@ class TestManifest:
         assert len(manifest["families"]) == 10
         first = manifest["families"][0]
         assert first["eval_seed_range"] == [101, 110]
-        assert first["train_seed_range"] == [901, 910]
+        assert first["train_seed_range"] == [901, 990]  # widened for issue #17 training synthesis (headroom, not a quota)
         assert first["license"].startswith("original")
         assert "pilot" not in manifest
 

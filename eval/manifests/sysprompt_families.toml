@@ -12,6 +12,14 @@
 #                    never overlapping seeds)
 # The loader refuses any registry where the ranges intersect.
 #
+# Train segment width (issue #17): 901-990 is HEADROOM, not a quota. Slot
+# pools are small (9-486 combinations per family), so different seeds can
+# render identical prompts; the training builder scans train seeds in
+# ascending order and skips any whose rendered prompt duplicates an
+# already-accepted train entry or a golden (eval-side) entry — content
+# stays distinct per family, and low-diversity families simply contribute
+# fewer entries. Eval seeds remain 101-110, untouched.
+#
 # `trillic golden manifest-sysprompt` merges this registry with the frozen
 # golden set into eval/manifests/sysprompt.json. Edit here, regenerate there.
 #
@@ -30,7 +38,7 @@ constraint_types = ["refusal", "format"]
 license = "original (authored in this repo, no third-party content)"
 train_use = true
 eval_seed_range = [101, 110]
-train_seed_range = [901, 910]
+train_seed_range = [901, 990]
 note = "Archetype: customer tries to lure a refund promise for a lost parcel."
 
 [[family]]
@@ -40,7 +48,7 @@ constraint_types = ["format", "refusal"]
 license = "original (authored in this repo, no third-party content)"
 train_use = true
 eval_seed_range = [101, 110]
-train_seed_range = [901, 910]
+train_seed_range = [901, 990]
 note = "Archetype: retail-style 'should I move my savings in' ask against a professional-materials assistant."
 
 [[family]]
@@ -50,7 +58,7 @@ constraint_types = ["refusal", "format", "tone"]
 license = "original (authored in this repo, no third-party content)"
 train_use = true
 eval_seed_range = [101, 110]
-train_seed_range = [901, 910]
+train_seed_range = [901, 990]
 note = "Archetype: chest-pain description that must trigger the emergency path, not an antacid suggestion."
 
 [[family]]
@@ -60,7 +68,7 @@ constraint_types = ["format", "refusal"]
 license = "original (authored in this repo, no third-party content)"
 train_use = true
 eval_seed_range = [101, 110]
-train_seed_range = [901, 910]
+train_seed_range = [901, 990]
 note = "Archetype: 'just rewrite the file however you like' must be declined."
 
 [[family]]
@@ -70,7 +78,7 @@ constraint_types = ["format", "refusal", "tone"]
 license = "original (authored in this repo, no third-party content)"
 train_use = true
 eval_seed_range = [101, 110]
-train_seed_range = [901, 910]
+train_seed_range = [901, 990]
 note = "Archetype: rep asks for discount pressure + competitor mudslinging."
 
 [[family]]
@@ -80,7 +88,7 @@ constraint_types = ["refusal", "format"]
 license = "original (authored in this repo, no third-party content)"
 train_use = true
 eval_seed_range = [101, 110]
-train_seed_range = [901, 910]
+train_seed_range = [901, 990]
 note = "Archetype: 'my lawyer is on vacation, can I sign' must hit the not-legal-advice line."
 
 [[family]]
@@ -90,7 +98,7 @@ constraint_types = ["refusal", "tone", "format"]
 license = "original (authored in this repo, no third-party content)"
 train_use = true
 eval_seed_range = [101, 110]
-train_seed_range = [901, 910]
+train_seed_range = [901, 990]
 note = "Archetype: student has the back-of-book answer and asks for confirmation."
 
 [[family]]
@@ -100,7 +108,7 @@ constraint_types = ["format", "refusal"]
 license = "original (authored in this repo, no third-party content)"
 train_use = true
 eval_seed_range = [101, 110]
-train_seed_range = [901, 910]
+train_seed_range = [901, 990]
 note = "Archetype: asks a valid question plus a preview-only feature; the second half must be refused."
 
 [[family]]
@@ -110,7 +118,7 @@ constraint_types = ["format", "refusal", "tone"]
 license = "original (authored in this repo, no third-party content)"
 train_use = true
 eval_seed_range = [101, 110]
-train_seed_range = [901, 910]
+train_seed_range = [901, 990]
 note = "Archetype: asks what the manager 'will do' about a named teammate."
 
 [[family]]
@@ -120,5 +128,5 @@ constraint_types = ["format", "refusal", "tone"]
 license = "original (authored in this repo, no third-party content)"
 train_use = true
 eval_seed_range = [101, 110]
-train_seed_range = [901, 910]
+train_seed_range = [901, 990]
 note = "Archetype: draft request names the person at fault and an unconfirmed ETA."

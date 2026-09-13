@@ -44,6 +44,11 @@ from trillic.report import ReportWriterError
 from trillic.resume import ResumeError
 from trillic.runner import run_eval
 from trillic.sizing import sizing_report
+from trillic.synthetic import (
+    SyntheticError,
+    collect_synthetic_errors,
+    write_synthetic_artifacts,
+)
 from trillic.sysprompt import (
     SysPromptError,
     build_sysprompt_entries,
@@ -275,6 +280,83 @@ def build_parser() -> argparse.ArgumentParser:
         help="golden jsonl files to assert zero content overlap against",
     )
 
+    corpus_build_synthetic_parser = corpus_sub.add_parser(
+        "build-synthetic",
+        help="synthesize the system_prompt + dialogue training layers "
+        "(train seeds only, diverted from golden by the family registries)",
+    )
+    corpus_build_synthetic_parser.add_argument(
+        "--families-sysprompt", required=True, type=Path,
+        help="system-prompt family registry (TOML: the seed-split authority)",
+    )
+    corpus_build_synthetic_parser.add_argument(
+        "--families-dialogue", required=True, type=Path,
+        help="dialogue family registry (TOML: the seed-split authority)",
+    )
+    corpus_build_synthetic_parser.add_argument(
+        "--golden", type=Path, nargs="+", default=None,
+        help="golden jsonl files whose content the seed selection must avoid "
+        "(pass the frozen golden files for the full discipline)",
+    )
+    corpus_build_synthetic_parser.add_argument(
+        "--target-sysprompt", required=True, type=int,
+        help="entry count target for the system_prompt layer",
+    )
+    corpus_build_synthetic_parser.add_argument(
+        "--target-dialogue", required=True, type=int,
+        help="entry count target for the dialogue layer",
+    )
+    corpus_build_synthetic_parser.add_argument(
+        "--rag-base", type=int, default=None,
+        help="frozen rag-layer entry count, for the achieved-mix record "
+        "(e.g. 300 from training/manifests/training-corpus-v1.json)",
+    )
+    corpus_build_synthetic_parser.add_argument(
+        "--out", required=True, type=Path, help="output corpus jsonl path"
+    )
+    corpus_build_synthetic_parser.add_argument(
+        "--out-manifest", required=True, type=Path,
+        help="output manifest JSON path (sha256, seed plans, mix record)",
+    )
+    corpus_build_synthetic_parser.add_argument(
+        "--record-file", default=None,
+        help="path string recorded in the manifest (repo-relative identity; "
+        "scripts/build_synthetic_training.py supplies this)",
+    )
+    corpus_build_synthetic_parser.add_argument(
+        "--repo-commit", default=None,
+        help="repo commit to record in the manifest (freeze discipline)",
+    )
+    corpus_build_synthetic_parser.add_argument(
+        "--repo-dirty", action="store_true",
+        help="record that the repo was dirty at generation time",
+    )
+
+    corpus_validate_synthetic_parser = corpus_sub.add_parser(
+        "validate-synthetic",
+        help="validate a synthetic training corpus jsonl (schema, seed "
+        "domain, regeneration, manifest, golden overlap)",
+    )
+    corpus_validate_synthetic_parser.add_argument(
+        "file", type=Path, help="synthetic training corpus jsonl file"
+    )
+    corpus_validate_synthetic_parser.add_argument(
+        "--families-sysprompt", type=Path, default=None,
+        help="system-prompt family registry (TOML) for the seed-domain re-proof",
+    )
+    corpus_validate_synthetic_parser.add_argument(
+        "--families-dialogue", type=Path, default=None,
+        help="dialogue family registry (TOML) for the seed-domain re-proof",
+    )
+    corpus_validate_synthetic_parser.add_argument(
+        "--training-manifest", type=Path, default=None,
+        help="synthetic training manifest (frozen bytes + counts + mix)",
+    )
+    corpus_validate_synthetic_parser.add_argument(
+        "--golden", type=Path, nargs="+", default=None,
+        help="golden jsonl files to assert zero content overlap against",
+    )
+
     delivery_parser = subparsers.add_parser(
         "delivery",
         help="delivery capability (drop-in contract verify, artifact pack)",
@@ -341,7 +423,20 @@ def main(argv: list[str] | None = None) -> int:
                 return _corpus_build(args)
             if args.corpus_command == "validate":
                 return _corpus_validate(args)
-        except (CorpusError, LongBenchError, GoldenError, ValueError, OSError) as e:
+            if args.corpus_command == "build-synthetic":
+                return _corpus_build_synthetic(args)
+            if args.corpus_command == "validate-synthetic":
+                return _corpus_validate_synthetic(args)
+        except (
+            CorpusError,
+            SyntheticError,
+            LongBenchError,
+            GoldenError,
+            SysPromptError,
+            DialogueError,
+            ValueError,
+            OSError,
+        ) as e:
             print(f"error: {e}", file=sys.stderr)
             return _ERROR_EXIT_CODE
     if args.command == "golden":
@@ -553,6 +648,103 @@ def _corpus_validate(args: argparse.Namespace) -> int:
         extras.append(f"zero overlap with {len(golden_fps)} golden fingerprints")
     if registry is not None:
         extras.append("matches training manifest (sha256 + boundaries + counts)")
+    suffix = f" ({'; '.join(extras)})" if extras else ""
+    print(f"{args.file}: ok ({count} entries){suffix}")
+    return 0
+
+
+def _corpus_build_synthetic(args: argparse.Namespace) -> int:
+    """Synthesize the two training layers; writes corpus jsonl + manifest."""
+    golden_fps = None
+    if args.golden:
+        golden_fps = golden_fingerprints(list(args.golden))
+    else:
+        print(
+            "note: no --golden given — the selection will not skip "
+            "golden-identical prompts and the zero-overlap assertion is "
+            "skipped (pass the frozen golden files for the full discipline)",
+            file=sys.stderr,
+        )
+    sys_families = load_families(args.families_sysprompt)
+    dlg_families = load_dialogue_families(args.families_dialogue)
+    manifest = write_synthetic_artifacts(
+        sys_families,
+        dlg_families,
+        targets={
+            "system_prompt": args.target_sysprompt,
+            "dialogue": args.target_dialogue,
+        },
+        golden_fingerprints=golden_fps,
+        corpus_path=args.out,
+        manifest_path=args.out_manifest,
+        rag_base=args.rag_base,
+        repo_commit=args.repo_commit,
+        repo_dirty=args.repo_dirty,
+        record_file=args.record_file,
+    )
+    mix = manifest["mix"]
+    achieved = mix.get("achieved_pct")
+    ratio = (
+        f", achieved mix "
+        f"rag={achieved['rag']:.1f}% system_prompt={achieved['system_prompt']:.1f}% "
+        f"dialogue={achieved['dialogue']:.1f}%"
+        if achieved
+        else ""
+    )
+    print(
+        f"{args.out}: {manifest['corpus']['entries']} entries from "
+        f"{len(manifest['families']['system_prompt'])}+"
+        f"{len(manifest['families']['dialogue'])} families{ratio}; "
+        f"manifest: {args.out_manifest}"
+    )
+    return 0
+
+
+def _corpus_validate_synthetic(args: argparse.Namespace) -> int:
+    """0 = valid (schema + seed domain + regeneration + manifest + golden)."""
+    sys_families = (
+        load_families(args.families_sysprompt)
+        if args.families_sysprompt is not None
+        else None
+    )
+    dlg_families = (
+        load_dialogue_families(args.families_dialogue)
+        if args.families_dialogue is not None
+        else None
+    )
+    manifest = None
+    if args.training_manifest is not None:
+        manifest = json.loads(args.training_manifest.read_text(encoding="utf-8"))
+    golden_fps = None
+    if args.golden:
+        golden_fps = golden_fingerprints(list(args.golden))
+    else:
+        print(
+            "note: no --golden given — the zero-overlap assertion is skipped "
+            "(pass the frozen golden files for the full discipline)",
+            file=sys.stderr,
+        )
+    errors = collect_synthetic_errors(
+        args.file,
+        sysprompt_families=sys_families,
+        dialogue_families=dlg_families,
+        manifest=manifest,
+        golden_fingerprints=golden_fps,
+    )
+    if errors:
+        for error in errors:
+            print(f"error: {error}", file=sys.stderr)
+        return _ERROR_EXIT_CODE
+    count = sum(
+        1 for line in args.file.read_text(encoding="utf-8").splitlines() if line.strip()
+    )
+    extras = []
+    if golden_fps is not None:
+        extras.append(f"zero overlap with {len(golden_fps)} golden fingerprints")
+    if sys_families is not None or dlg_families is not None:
+        extras.append("seed domain re-proved against the family registries")
+    if manifest is not None:
+        extras.append("matches training manifest (sha256 + counts + mix)")
     suffix = f" ({'; '.join(extras)})" if extras else ""
     print(f"{args.file}: ok ({count} entries){suffix}")
     return 0

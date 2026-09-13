@@ -21,7 +21,7 @@
       ],
       "train_seed_range": [
         901,
-        910
+        990
       ],
       "note": "Ported scenario 1; optional deeper round (signing-secret rotation) spliced by seeded slot."
     },
@@ -41,7 +41,7 @@
       ],
       "train_seed_range": [
         901,
-        910
+        990
       ],
       "note": "Ported scenario 2; carries code blocks (template braces escaped)."
     },
@@ -60,7 +60,7 @@
       ],
       "train_seed_range": [
         901,
-        910
+        990
       ],
       "note": "Ported scenario 3; decision-dense with numbers (queue cap, retention, effort)."
     },
@@ -79,7 +79,7 @@
       ],
       "train_seed_range": [
         901,
-        910
+        990
       ],
       "note": "Ported scenario 4; SQL join semantics carry the decisions."
     },
@@ -99,7 +99,7 @@
       ],
       "train_seed_range": [
         901,
-        910
+        990
       ],
       "note": "Ported scenario 5; timestamps and revision ids are seeded."
     },
@@ -119,7 +119,7 @@
       ],
       "train_seed_range": [
         901,
-        910
+        990
       ],
       "note": "New family: clause-level decisions with dates, percentages, and named owner."
     },
@@ -139,7 +139,7 @@
       ],
       "train_seed_range": [
         901,
-        910
+        990
       ],
       "note": "New family: date-dense planning dialogue; recall task mirrors steering-committee briefing."
     },
@@ -159,7 +159,7 @@
       ],
       "train_seed_range": [
         901,
-        910
+        990
       ],
       "note": "New family: names + versions + dates; severity reasoning must survive."
     },
@@ -179,7 +179,7 @@
       ],
       "train_seed_range": [
         901,
-        910
+        990
       ],
       "note": "New family: compliance-grade precision — every grant parameter is a key fact."
     },
@@ -199,7 +199,7 @@
       ],
       "train_seed_range": [
         901,
-        910
+        990
       ],
       "note": "New family: the ship-review recap is the recall task."
     }

@@ -34,7 +34,9 @@ final-message-only statements): each point quotes the history verbatim, so
 its survival is mechanically judgeable after compression.
 
 Golden entries are drawn from EVAL seeds only; synthesizing or manifesting
-a train seed raises.
+a train seed raises. The train-side mirror `synthesize_training_entry`
+(issue #17) is the exact inverse: train seeds only, eval seeds raise —
+shared templates, never shared seeds.
 """
 
 import hashlib
@@ -1226,8 +1228,56 @@ def load_families(path: Path) -> list[dict]:
 
 def synthesize_entry(family: dict, seed: int) -> dict:
     """Synthesize one golden entry for (family, seed) — eval seeds only."""
-    name = family["name"]
     _check_seed_is_eval(family, seed)
+    prompt, key_points = _render_seed(family["name"], seed)
+    return {
+        "id": f"dlg-{family['name']}-s{seed}",
+        "load_type": "dialogue",
+        "prompt": prompt,
+        "key_points": key_points,
+        "source": {
+            "dataset": "synthetic",
+            "subset": family["name"],
+            "license": family["license"],
+            "split": "eval",
+            "family": family["name"],
+            "seed": seed,
+            "content_sha1": hashlib.sha1(prompt.encode("utf-8")).hexdigest(),
+        },
+    }
+
+
+def synthesize_training_entry(family: dict, seed: int) -> dict:
+    """Synthesize one TRAINING entry for (family, seed) — train seeds only.
+
+    Train-side mirror of `synthesize_entry` (issue #17): same templates,
+    same seeded slot machinery, never the same seeds. The entry uses the
+    training-corpus schema (question/task reserved fields, no key_points —
+    judgeability is a golden-side concern), so it drops straight into the
+    synthetic layer of training/corpus/.
+    """
+    _check_seed_is_train(family, seed)
+    prompt, _key_points = _render_seed(family["name"], seed)
+    return {
+        "id": f"dlg-{family['name']}-s{seed}",
+        "load_type": "dialogue",
+        "prompt": prompt,
+        "question": "",
+        "task": "",
+        "source": {
+            "dataset": "synthetic",
+            "subset": family["name"],
+            "license": family["license"],
+            "split": "train",
+            "family": family["name"],
+            "seed": seed,
+            "content_sha1": hashlib.sha1(prompt.encode("utf-8")).hexdigest(),
+        },
+    }
+
+
+def _render_seed(name: str, seed: int) -> tuple[str, list[str]]:
+    """Deterministic slot draw + render for one (family, seed) pair."""
     template = FAMILY_TEMPLATES[name]
     rng = _family_rng(name, seed)
     # sorted() keeps the RNG draw order stable regardless of dict order
@@ -1235,22 +1285,7 @@ def synthesize_entry(family: dict, seed: int) -> dict:
         key: rng.choice(options)
         for key, options in sorted(template.slot_options.items())
     }
-    prompt, key_points = template.render(slots)
-    return {
-        "id": f"dlg-{name}-s{seed}",
-        "load_type": "dialogue",
-        "prompt": prompt,
-        "key_points": key_points,
-        "source": {
-            "dataset": "synthetic",
-            "subset": name,
-            "license": family["license"],
-            "split": "eval",
-            "family": name,
-            "seed": seed,
-            "content_sha1": hashlib.sha1(prompt.encode("utf-8")).hexdigest(),
-        },
-    }
+    return template.render(slots)
 
 
 def build_dialogue_entries(families: list[dict], seed_plan: dict[str, list[int]]) -> list[dict]:
@@ -1426,6 +1461,25 @@ def _check_seed_is_eval(family: dict, seed) -> None:
             "from eval seeds only (data-strategy 硬约束 4: 种子分流)"
         )
     if seed not in range(*_inclusive(family["eval_seed_range"])):
+        raise DialogueError(
+            f"family {name!r}: seed {seed} is outside both seed pools "
+            f"(eval {family['eval_seed_range']}, train {family['train_seed_range']})"
+        )
+
+
+def _check_seed_is_train(family: dict, seed) -> None:
+    """Refuse eval-side and out-of-pool seeds with a precise reason
+    (the training-side half of the two-sided seed diversion)."""
+    if not isinstance(seed, int):
+        raise DialogueError(f"family {family['name']!r}: seed must be an int")
+    name = family["name"]
+    if seed in range(*_inclusive(family["eval_seed_range"])):
+        raise DialogueError(
+            f"family {name!r}: seed {seed} is an EVAL seed — training "
+            "synthesis draws from train seeds only (data-strategy 硬约束 4: "
+            "种子分流)"
+        )
+    if seed not in range(*_inclusive(family["train_seed_range"])):
         raise DialogueError(
             f"family {name!r}: seed {seed} is outside both seed pools "
             f"(eval {family['eval_seed_range']}, train {family['train_seed_range']})"

@@ -48,31 +48,47 @@
    定容决策(parent #15)在同一 manifest 版本化框架下可调整比例——
    但每次调整必须当作新数据版本(新 manifest + sha256),不许静默改。
 
-## v1 基础层现状(本 issue 产出)
+## v1 语料层现状
 
-- 基础层 = LongBench train 半侧、训练用途许可核查通过的子集:
+- 基础层(issue #16)= LongBench train 半侧、训练用途许可核查通过的子集:
   **hotpotqa 150 + gov_report 150 = 300 条**,全部 `load_type=rag`;
+- 合成两层(issue #17)已生成:**system_prompt 350 + dialogue 350**,
+  落地本文 30/35/35 锚点配比(300 rag + 700 合成 = 1000 条,实际
+  达成 30.0/35.0/35.0);语料 = `training/corpus/synthetic-train-v1.jsonl`,
+  manifest = `training/manifests/synthetic-training-v1.json`(逐族
+  seed 计划 + sha256 + mix 记录);
 - qasper(train 半侧 112 条)**许可排除**:逐文档 CC-BY-* 变体
   (含 NC/SA)无法从 LongBench 分发行逐条核验,维持保守排除
   (eval-only)。证据链见 `eval/manifests/subsets.toml` 的
   `train_use_evidence` 与 `training/manifests/training-corpus-v1.json`;
-- 合成两层尚未生成(train 种子段已预留:每族 901–910,见
-  `eval/manifests/sysprompt_families.toml` / `dialogue_families.toml`);
-- 按 30/35/35 目标配比,300 条 rag 打底对应的定容规模约 **1000 条**
-  (300 / 0.30),即 system_prompt ≈ 350、dialogue ≈ 350。pilot
-  (几百条)与全量定容的具体数字由后续 issue 决定,本表只给锚点。
+- 合成层的多样性受生成器 slot 池约束(sysprompt 每族 9–486 种组合,
+  dialogue 每族 ≥243 种):选取器扫描 train 种子段(901–990,预留
+  headroom 而非配额),**内容去重**后按族轮转录取至目标条数,因此
+  低多样性族贡献少(hr_policy 5 条)、高多样性族贡献多
+  (support_logistics 70 条),dialogue 侧恰好每族 35 条——逐族条数
+  以 manifest 为准;后续 pilot(几百条)与全量定容的具体数字由
+  定容决策(parent #15)在同一版本化框架下调整。
 
-## 合成层纪律(预告,后续 issue 落地)
+## 合成层纪律(已落地,issue #17)
 
 - **种子分流**:合成生成器代码与 golden 共享,但场景族种子段互斥
-  (eval 101–110 / train 901–910);训练合成只用 train 段,校验器
-  做互斥断言(与本文基础层的零交集断言同构);
+  (eval 101–110 / train 901–990,train 段为 headroom 而非配额);
+  训练合成只用 train 段,双方校验器互斥断言——golden 侧生成器对
+  train 种子 raise,训练侧对 eval 种子 raise,且选取器/校验器在
+  **内容层**再断言一次零重叠(不同种子可渲染出 byte 相同的 prompt,
+  slot 池小干这种情况是常态,选取器直接跳过);
+- **选取规则**(确定性,同输入同输出):按注册表族序轮转,族内
+  从 train 段升序扫描,仅录取渲染内容在语料内唯一且不在 golden
+  指纹集中的种子,至目标条数为止;条数配比与逐族 seed 计划全部
+  版本化进 manifest(sha256 锚定);
 - **v2 query-aware 预留**:schema 第一天含 `question` / `task` 字段
   (v1 恒空);v2 填充时样本形态为 `[task; context]` 拼接、只对
   context 打标(decisions §2),多轮对话条目的 role 行序列化让
   "assistant 轮与已缓存前缀不可压缩"(decisions §5)在数据层可执行;
-- **零网关调用纪律**:本层产出(提取、manifest、校验)全部为本地
-  文件变换;teacher 蒸馏的花费全部发生在后续蒸馏 issue,进网关账本。
+- **零网关调用纪律**:本层产出(合成、manifest、校验)全部为本地
+  确定性模板渲染;teacher 蒸馏的花费全部发生在后续蒸馏 issue,进
+  网关账本。重建入口:`scripts/build_synthetic_training.py`(等价于
+  `trillic corpus build-synthetic` + 全量校验)。
 
 ## 许可与排除速览
 
