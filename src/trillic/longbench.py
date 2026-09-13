@@ -158,6 +158,7 @@ def build_manifest(subsets_toml: Path, data_dir: Path) -> dict:
                 ),
                 "license": entry["license"],
                 "train_use": entry["train_use"],
+                "train_use_evidence": list(entry.get("train_use_evidence", [])),
                 "note": entry.get("note", ""),
             }
         )
@@ -167,6 +168,22 @@ def build_manifest(subsets_toml: Path, data_dir: Path) -> dict:
         "source_url": curation.get("source_url", ""),
         "subsets": subsets,
     }
+
+
+def load_verified_split(
+    subset_name: str, info: dict, data_dir: Path
+) -> tuple[list[dict], list[dict]]:
+    """Load a subset's rows and halve them, refusing drifted data.
+
+    The manifest is the split record: it must describe the exact bytes
+    being split (entry count + file sha256). Shared by the golden side
+    (eval half) and the training side (train half) so both refuse drift
+    the same way.
+    """
+    data_dir = Path(data_dir)
+    rows = load_subset_rows(data_dir / info["file"])
+    _check_against_manifest(subset_name, info, data_dir / info["file"], rows)
+    return split_half_rows(rows)
 
 
 def build_rag_entries(
@@ -189,10 +206,7 @@ def build_rag_entries(
             continue
         wanted = counts[subset_name]
         info = manifest_subsets[subset_name]
-        rows = load_subset_rows(data_dir / info["file"])
-        _check_against_manifest(subset_name, info, data_dir / info["file"], rows)
-
-        eval_rows, train_rows = split_half_rows(rows)
+        eval_rows, train_rows = load_verified_split(subset_name, info, data_dir)
         eval_fps = {row_fingerprint(r) for r in eval_rows}
         train_fps = {row_fingerprint(r) for r in train_rows}
 
@@ -244,14 +258,14 @@ def _check_against_manifest(subset_name: str, info: dict, path: Path, rows: list
     """Refuse to mix splits against drifted data: the manifest is the split
     record, and it must describe the exact bytes being split."""
     if len(rows) != info["entries"]:
-        raise ValueError(
+        raise LongBenchError(
             f"{subset_name}: data file has {len(rows)} entries but the manifest "
             f"records {info['entries']} — regenerate the manifest (splits must "
             "never be recomputed against drifted data)"
         )
     actual_sha = _file_sha256(path)
     if actual_sha != info["file_sha256"]:
-        raise ValueError(
+        raise LongBenchError(
             f"{subset_name}: data file sha256 {actual_sha[:12]}… does not match "
             f"the manifest's {info['file_sha256'][:12]}… — same entry count but "
             "different content; regenerate the manifest"

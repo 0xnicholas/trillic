@@ -14,6 +14,12 @@ from trillic import __version__
 from trillic.clients.gateway import GatewayError
 from trillic.clients.sidecar import RefineError
 from trillic.config import ConfigError, load_config
+from trillic.corpus import (
+    CorpusError,
+    build_training_entries,
+    build_training_manifest,
+    collect_corpus_errors,
+)
 from trillic.delivery import (
     DeliveryError,
     pack_checkpoint,
@@ -31,7 +37,7 @@ from trillic.dialogue import (
     load_families as load_dialogue_families,
     make_review as make_dialogue_review,
 )
-from trillic.golden import GoldenError, collect_golden_errors
+from trillic.golden import GoldenError, collect_golden_errors, load_golden
 from trillic.judge import JudgeError
 from trillic.longbench import LongBenchError, build_manifest, build_rag_entries
 from trillic.report import ReportWriterError
@@ -221,6 +227,54 @@ def build_parser() -> argparse.ArgumentParser:
     )
     dialogue_build_parser.add_argument("--out", required=True, type=Path)
 
+    corpus_parser = subparsers.add_parser(
+        "corpus",
+        help="training corpus tooling (train-half extraction, schema, manifest)",
+    )
+    corpus_sub = corpus_parser.add_subparsers(dest="corpus_command", required=True)
+
+    corpus_build_parser = corpus_sub.add_parser(
+        "build",
+        help="extract the train half of train-permitted LongBench subsets",
+    )
+    corpus_build_parser.add_argument(
+        "--manifest", required=True, type=Path,
+        help="LongBench split/license manifest (eval/manifests/longbench.json)",
+    )
+    corpus_build_parser.add_argument(
+        "--data-dir", required=True, type=Path, help="downloaded LongBench data directory"
+    )
+    corpus_build_parser.add_argument(
+        "--out", required=True, type=Path, help="output corpus jsonl path"
+    )
+    corpus_build_parser.add_argument(
+        "--out-manifest", required=True, type=Path,
+        help="output training manifest JSON path (pins corpus sha256, licenses, exclusions)",
+    )
+    corpus_build_parser.add_argument(
+        "--repo-commit", default=None,
+        help="repo commit to record in the manifest (freeze discipline; "
+        "scripts/build_training_corpus.py supplies this)",
+    )
+    corpus_build_parser.add_argument(
+        "--repo-dirty", action="store_true",
+        help="record that the repo was dirty at generation time",
+    )
+
+    corpus_validate_parser = corpus_sub.add_parser(
+        "validate",
+        help="validate a training corpus jsonl (schema, splits, licenses, golden overlap)",
+    )
+    corpus_validate_parser.add_argument("file", type=Path, help="training corpus jsonl file")
+    corpus_validate_parser.add_argument(
+        "--training-manifest", type=Path, default=None,
+        help="training manifest (frozen-bytes sha256 + boundary re-proof + counts)",
+    )
+    corpus_validate_parser.add_argument(
+        "--golden", type=Path, nargs="+", default=None,
+        help="golden jsonl files to assert zero content overlap against",
+    )
+
     delivery_parser = subparsers.add_parser(
         "delivery",
         help="delivery capability (drop-in contract verify, artifact pack)",
@@ -279,6 +333,15 @@ def main(argv: list[str] | None = None) -> int:
             if args.delivery_command == "pack":
                 return _delivery_pack(args)
         except (DeliveryError, OSError, ValueError) as e:
+            print(f"error: {e}", file=sys.stderr)
+            return _ERROR_EXIT_CODE
+    if args.command == "corpus":
+        try:
+            if args.corpus_command == "build":
+                return _corpus_build(args)
+            if args.corpus_command == "validate":
+                return _corpus_validate(args)
+        except (CorpusError, LongBenchError, GoldenError, ValueError, OSError) as e:
             print(f"error: {e}", file=sys.stderr)
             return _ERROR_EXIT_CODE
     if args.command == "golden":
@@ -438,6 +501,68 @@ def _delivery_pack(args: argparse.Namespace) -> int:
     """Assemble the delivery form; verify failure refuses before writing."""
     result = pack_checkpoint(args.checkpoint, args.out, draft_path=args.draft)
     print_pack_summary(result)
+    return 0
+
+
+def _corpus_build(args: argparse.Namespace) -> int:
+    """train-half extraction: writes the corpus jsonl + its manifest."""
+    manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
+    entries = build_training_entries(manifest, data_dir=args.data_dir)
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(
+        "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in entries),
+        encoding="utf-8",
+    )
+    training_manifest = build_training_manifest(
+        manifest,
+        args.out,
+        repo_commit=args.repo_commit,
+        repo_dirty=args.repo_dirty,
+    )
+    args.out_manifest.parent.mkdir(parents=True, exist_ok=True)
+    args.out_manifest.write_text(
+        json.dumps(training_manifest, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    excluded = ", ".join(s["name"] for s in training_manifest["excluded_subsets"]) or "none"
+    print(
+        f"{args.out}: {len(entries)} entries from "
+        f"{len(training_manifest['subsets'])} train-permitted subsets "
+        f"(excluded: {excluded}); manifest: {args.out_manifest}"
+    )
+    return 0
+
+
+def _corpus_validate(args: argparse.Namespace) -> int:
+    """0 = valid (schema + MeetingBank + train half + registry + golden overlap)."""
+    registry = None
+    if args.training_manifest is not None:
+        registry = json.loads(args.training_manifest.read_text(encoding="utf-8"))
+    golden_fingerprints = None
+    if args.golden:
+        golden_fingerprints = {}
+        for path in args.golden:
+            for item in load_golden(path):
+                fingerprint = item.source.get("content_sha1")
+                if isinstance(fingerprint, str) and fingerprint.strip():
+                    golden_fingerprints[fingerprint] = item.id
+    errors = collect_corpus_errors(
+        args.file, registry=registry, golden_fingerprints=golden_fingerprints
+    )
+    if errors:
+        for error in errors:
+            print(f"error: {error}", file=sys.stderr)
+        return _ERROR_EXIT_CODE
+    count = sum(
+        1 for line in args.file.read_text(encoding="utf-8").splitlines() if line.strip()
+    )
+    extras = []
+    if golden_fingerprints is not None:
+        extras.append(f"zero overlap with {len(golden_fingerprints)} golden fingerprints")
+    if registry is not None:
+        extras.append("matches training manifest (sha256 + boundaries + counts)")
+    suffix = f" ({'; '.join(extras)})" if extras else ""
+    print(f"{args.file}: ok ({count} entries){suffix}")
     return 0
 
 

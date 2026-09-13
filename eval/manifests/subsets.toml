@@ -6,6 +6,11 @@
 #
 # train_use verdicts follow docs/data-strategy.md 硬约束 5: research-only /
 # non-commercial subsets are golden-only and must never enter training data.
+#
+# train_use_evidence (issue #16): per-subset TRAIN-USE license trail — the
+# old-repo SOURCES.md precedent was evaluation-scoped and does not cover
+# training. Each link states what it establishes. The verdict recorded in
+# train_use is the conservative operative one.
 
 source_url = "https://huggingface.co/datasets/zai-org/LongBench/resolve/main/data.zip"
 
@@ -14,18 +19,34 @@ name = "qasper"
 file = "qasper_e.jsonl"
 license = "CC BY-NC 4.0 (QASPER, Dasigi et al. 2021, AllenAI)"
 train_use = false
-note = "Non-commercial license: eval-only. Hard-excluded from phase-2 training data (data-strategy 硬约束 5)."
+note = "Conservative exclusion: eval-only, hard-excluded from training (data-strategy 硬约束 5). The creators' dataset card declares CC BY 4.0, but the constituent paper full texts carry per-document 'CC-BY-*' variants (Unpaywall/S2ORC, incl. NC/SA family members) that cannot be verified per row from the LongBench distribution — per-document variance is structural, so the recorded CC BY-NC precedent stands. Revisit only with a license-mapped QASPER download."
+train_use_evidence = [
+  "https://huggingface.co/datasets/allenai/qasper — creators' card, Licensing Information: CC BY 4.0 (dataset-level redistribution license)",
+  "https://aclanthology.org/2021.naacl-main.365/ — paper: source texts restricted to arXiv papers under 'CC-BY-*' licenses via Unpaywall/S2ORC (per-document variants, not individually verifiable from LongBench rows)",
+  "https://github.com/0xnicholas/tokencamp/blob/main/compression/eval/corpus/SOURCES.md — old-repo precedent (2026-07-27, evaluation-scoped): recorded CC BY-NC 4.0",
+]
 
 [[subset]]
 name = "hotpotqa"
 file = "hotpotqa_e.jsonl"
 license = "CC BY-SA 4.0 (HotpotQA, Yang et al. 2018)"
 train_use = true
-note = "Train use permitted; attribution and share-alike obligations attach to derived artifacts. Multi-doc QA (concatenated wiki passages) — archetypal RAG shape."
+note = "Train use permitted; attribution and share-alike obligations attach to derived artifacts (decisions §6: model card declares derivation; weights stay SaaS-only, not distributed). Multi-doc QA (concatenated wiki passages) — archetypal RAG shape."
+train_use_evidence = [
+  "https://hotpotqa.github.io/ — official homepage: 'HotpotQA is distributed under a CC BY-SA 4.0 License.'",
+  "https://github.com/hotpotqa/hotpot — official repo README: dataset under CC BY-SA 4.0 (code Apache-2.0)",
+  "https://creativecommons.org/licenses/by-sa/4.0/ — CC BY-SA 4.0 terms: commercial use and adaptations permitted; attribution + share-alike obligations on derivatives",
+]
 
 [[subset]]
 name = "gov_report"
 file = "gov_report_e.jsonl"
 license = "US federal government works (public domain; GovReport, Huang et al. 2021)"
 train_use = true
-note = "Works of the U.S. federal government are public domain; LongBench redistributes for benchmark use. Old-repo SOURCES.md precedent (2026-07-27)."
+note = "Underlying GAO/CRS reports are works of the U.S. federal government (public domain); the GovReport collection as republished by its authors is CC BY 4.0 — both layers permit training. Old-repo SOURCES.md precedent (2026-07-27)."
+train_use_evidence = [
+  "https://www.govinfo.gov/content/pkg/USCODE-2022-title17/html/USCODE-2022-title17-chap1-sec105.htm — 17 U.S.C. §105: U.S. government works not subject to copyright",
+  "https://gov-report-data.github.io/ — GovReport (Huang et al. 2021): reports from Congressional Research Service and U.S. Government Accountability Office",
+  "https://huggingface.co/datasets/launch/gov_report — authors' redistribution card: CC BY 4.0",
+  "in-corpus notice — GAO texts in gov_report_e.jsonl carry 'This is a work of the U.S. government and is not subject to copyright protection in the United States' verbatim",
+]

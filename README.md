@@ -21,6 +21,7 @@ checkpoint 上领域微调出自有模型,在压缩质量、压缩率、query-aw
 - `docs/decisions.md` — 立项决策(2026-08-29 grilling 定案,含修订史与排除项汇总)
 - `docs/roadmap.md` — 阶段结构、门禁与止损(2026-08-30 grilling 定案;阶段结构唯一权威)
 - `docs/data-strategy.md` — 训练数据策略:蒸馏管线、语料来源与配比、硬约束
+- `docs/training-mix.md` — 训练语料配比设计(v1:公开打底 + 两类加重,含理由与许可速览)
 - `docs/evaluation.md` — 第一阶段:任务级评测基线(项目验收尺)
 - `docs/delivery/refine-integration.md` — 接入包:drop-in 契约、宿主改造集、切换/回滚 runbook
 - `docs/baselines/` — 冻结基线归档(定容决策、双 checkpoint 对照、阶段出口核销)
@@ -142,7 +143,7 @@ v1 锁定 mBERT-base 底座,验收对比基线 = 冻结基线。
 **当前:阶段 2(数据管线),票集 #15–#20 已立**(#15 为 PRD):
 
 - #16 训练语料:train 半侧提取 + 训练用途许可核查 + schema 定稿(零花费,
-  当前 frontier)
+  ✅ 已落地:基础层 300 条 + manifest/校验器 + 配比设计 `docs/training-mix.md`)
 - #17 合成训练语料:场景族/种子分流 + 加重配比(零花费)
 - #18 teacher 蒸馏管线 walking skeleton:小规模 pilot(几百条,~10² 次
   网关调用)

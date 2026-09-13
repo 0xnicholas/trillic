@@ -34,6 +34,7 @@ name = "qasper"
 file = "qasper_e.jsonl"
 license = "CC BY-NC 4.0 (QASPER)"
 train_use = false
+train_use_evidence = ["https://example.org/qasper — fixture evidence"]
 note = "eval-only"
 
 [[subset]]
@@ -41,6 +42,7 @@ name = "hotpotqa"
 file = "hotpotqa_e.jsonl"
 license = "CC BY-SA 4.0 (HotpotQA)"
 train_use = true
+train_use_evidence = ["https://example.org/hotpotqa — fixture evidence"]
 note = "share-alike noted"
 """
 
