@@ -626,6 +626,58 @@ def _compress_chunks(
     return results, stats
 
 
+def _check_overwrite_identity(
+    out_dir: Path,
+    *,
+    corpus_shas: list[str],
+    teacher_model: str,
+    max_chunk_tokens: int,
+    window_size: int,
+    vr_drop_fraction: float,
+    ag_drop_fraction: float,
+) -> None:
+    """Versioned-artifact guard with a re-pin escape hatch.
+
+    A manifest in the out dir refuses the run UNLESS every
+    content-determining pin matches (corpus bytes, teacher, chunking,
+    matching, QC fractions): same identity means the regeneration is
+    journal-backed and byte-deterministic, so overwriting in place is
+    exactly the zero-cost re-pin flow (record paths / repo commit may
+    legitimately differ — that is the point of re-pinning). Any drift
+    picks a new output directory instead of silently rewriting history.
+    """
+    manifest_path = out_dir / "manifest.json"
+    if not manifest_path.is_file():
+        return
+    try:
+        existing = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        raise DistillError(
+            f"{manifest_path} exists but cannot be read ({e}) — move it aside "
+            "and regenerate deliberately"
+        ) from e
+    mismatches: list[str] = []
+    files = existing.get("corpus", {}).get("files", [])
+    if [f.get("sha256") for f in files] != corpus_shas:
+        mismatches.append("corpus files/sha256s")
+    teacher = existing.get("teacher", {})
+    if teacher.get("model") != teacher_model or teacher.get("prompt_version") != PROMPT_VERSION:
+        mismatches.append("teacher model / prompt version")
+    if existing.get("chunking", {}).get("max_tokens") != max_chunk_tokens:
+        mismatches.append("chunking.max_tokens")
+    if existing.get("labeling", {}).get("window_size") != window_size:
+        mismatches.append("labeling.window_size")
+    qc = existing.get("quality_control", {})
+    if qc.get("vr_drop_fraction") != vr_drop_fraction or qc.get("ag_drop_fraction") != ag_drop_fraction:
+        mismatches.append("quality_control drop fractions")
+    if mismatches:
+        raise DistillError(
+            f"{manifest_path} already exists with a different identity "
+            f"({'; '.join(mismatches)}) — distillation outputs are versioned "
+            "artifacts; pick a new output directory instead of overwriting"
+        )
+
+
 def run_distillation(
     *,
     corpus_paths: list[Path],
@@ -666,14 +718,16 @@ def run_distillation(
     if not isinstance(concurrency, int) or isinstance(concurrency, bool) or concurrency < 1:
         raise DistillError(f"concurrency must be an integer >= 1, got {concurrency!r}")
     out_dir = Path(out_dir)
-    if (out_dir / "manifest.json").is_file():
-        raise DistillError(
-            f"{out_dir / 'manifest.json'} already exists — distillation outputs "
-            "are versioned artifacts; pick a new output directory (or move the "
-            "old one) instead of overwriting"
-        )
-
     rows, files = load_corpus_rows(list(corpus_paths))
+    _check_overwrite_identity(
+        out_dir,
+        corpus_shas=[f["sha256"] for f in files],
+        teacher_model=teacher_model,
+        max_chunk_tokens=max_chunk_tokens,
+        window_size=window_size,
+        vr_drop_fraction=vr_drop_fraction,
+        ag_drop_fraction=ag_drop_fraction,
+    )
     if record_corpus is not None and len(record_corpus) != len(files):
         raise DistillError(
             f"record_corpus needs one identity per corpus file ({len(files)}), "

@@ -101,11 +101,24 @@ class TestDistillRun:
         assert manifest["gateway"]["calls_reused"] == manifest["counts"]["chunks"]
         assert "reused" in capsys.readouterr().out
 
-    def test_refuses_overwrite(self, corpus_file, tmp_path, capsys):
+    def test_same_identity_rerun_repins_in_place(self, corpus_file, tmp_path, capsys):
+        # same content-determining pins: regeneration is journal-backed and
+        # byte-deterministic, so overwriting in place is the re-pin flow
         assert main(build_args(corpus_file, tmp_path)) == 0
-        code = main(build_args(corpus_file, tmp_path))
+        first = json.loads((tmp_path / "out" / "manifest.json").read_text(encoding="utf-8"))
+        assert main(build_args(corpus_file, tmp_path)) == 0
+        second = json.loads((tmp_path / "out" / "manifest.json").read_text(encoding="utf-8"))
+        assert second["gateway"]["calls_fresh"] == 0
+        assert second["gateway"]["calls_reused"] == second["counts"]["chunks"]
+        assert first["outputs"]["labeled"]["sha256"] == second["outputs"]["labeled"]["sha256"]
+
+    def test_identity_drift_refuses_overwrite(self, corpus_file, tmp_path, capsys):
+        assert main(build_args(corpus_file, tmp_path)) == 0
+        code = main(
+            build_args(corpus_file, tmp_path, "--teacher-model", "other/teacher")
+        )
         assert code == 1
-        assert "already exists" in capsys.readouterr().err
+        assert "different identity" in capsys.readouterr().err
 
     def test_unknown_budget_class_fails(self, corpus_file, tmp_path, capsys):
         code = main(

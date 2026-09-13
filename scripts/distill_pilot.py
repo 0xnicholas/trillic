@@ -91,8 +91,6 @@ def _check_corpus_frozen() -> None:
 
 def main() -> int:
     _check_corpus_frozen()
-    if (OUT / "manifest.json").is_file():
-        raise SystemExit(f"{OUT / 'manifest.json'} already exists — pilot outputs are versioned; move it first")
     commit, dirty = _repo_state()
     print(f"repo state: commit {commit} dirty={dirty}")
     gateway = HttpGatewayClient(

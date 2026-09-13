@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from trillic.distill import (
+    DistillError,
     PROMPT_TEMPLATE,
     PROMPT_VERSION,
     chunk_text,
@@ -580,16 +581,23 @@ class TestRunDistillation:
 
     def test_teacher_change_invalidates_replay(self, corpus_paths, tmp_path):
         self._run(corpus_paths, tmp_path, ScriptedTeacher())
+        # same identity into the SAME out dir: the re-pin flow — allowed,
+        # journal replays everything
         second = ScriptedTeacher()
-        with pytest.raises(Exception, match="already exists"):
-            self._run(corpus_paths, tmp_path, second)
+        repin = self._run(corpus_paths, tmp_path, second)
+        assert second.calls == 0
+        assert repin["gateway"]["calls_reused"] == repin["counts"]["chunks"]
+        # identity drift refuses to overwrite the versioned artifact
+        third = ScriptedTeacher()
+        with pytest.raises(DistillError, match="different identity"):
+            self._run(corpus_paths, tmp_path, third, teacher_model="other/teacher")
         # different output dir, different teacher: full re-bill (new ledger)
         manifest = self._run(
-            corpus_paths, tmp_path, second, teacher_model="other/teacher",
+            corpus_paths, tmp_path, third, teacher_model="other/teacher",
             out_dir=tmp_path / "out2",
         )
         assert manifest["gateway"]["calls_reused"] == 0
-        assert manifest["gateway"]["calls_fresh"] == second.calls
+        assert manifest["gateway"]["calls_fresh"] == third.calls
 
     def test_same_ledger_replays_without_out_dir(self, corpus_paths, tmp_path):
         # same identity into a THIRD out dir: everything replays (the
