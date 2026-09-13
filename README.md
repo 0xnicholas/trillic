@@ -17,11 +17,15 @@ checkpoint 上领域微调出自有模型,在压缩质量、压缩率、query-aw
 
 ## 文档地图
 
-- `docs/decisions.md` — 立项决策(2026-08-29 grilling 定案,含修订史)
-- `docs/roadmap.md` — 阶段结构、门禁与止损(2026-08-30 grilling 定案)
+- `CONTEXT.md` — 项目术语表(北极星 / 验收尺 / v1·v2 / 产物包 / 接入包 / 供货)
+- `docs/decisions.md` — 立项决策(2026-08-29 grilling 定案,含修订史与排除项汇总)
+- `docs/roadmap.md` — 阶段结构、门禁与止损(2026-08-30 grilling 定案;阶段结构唯一权威)
 - `docs/data-strategy.md` — 训练数据策略:蒸馏管线、语料来源与配比、硬约束
 - `docs/evaluation.md` — 第一阶段:任务级评测基线(项目验收尺)
+- `docs/delivery/refine-integration.md` — 接入包:drop-in 契约、宿主改造集、切换/回滚 runbook
+- `docs/baselines/` — 冻结基线归档(定容决策、双 checkpoint 对照、阶段出口核销)
 - `docs/references.md` — 论文、旧项目文档、对标调研的索引
+- `docs/agents/` — agent 技能约定(issue tracker / triage 标签 / domain 文档)
 
 ## 上游参考
 
@@ -129,7 +133,22 @@ uv run trillic eval run \
 
 ## 状态
 
-阶段 1(评测基线)完成:#2–#8 已落地;#10–#14 交付能力族已落地;#9 双
-checkpoint 全量基线 + 冻结收官已落地(2026-09-12:149 条 × 0.1–0.5 双基线、
+**阶段 1(评测基线)= 验收尺:完成。**#2–#8 harness 与 golden 落地;#9
+双 checkpoint 全量基线 + 冻结收官(2026-09-12:149 条 × 0.1–0.5 双基线、
 延迟档案、后手牌判定不激活、golden 冻结 `fb728d6a5042…`,出口核销见
-`docs/baselines/2026-09-12-stage1-exit.md`)。下一步:阶段 2 数据管线。
+`docs/baselines/2026-09-12-stage1-exit.md`);#10–#14 交付能力族前置落地。
+v1 锁定 mBERT-base 底座,验收对比基线 = 冻结基线。
+
+**当前:阶段 2(数据管线),票集 #15–#20 已立**(#15 为 PRD):
+
+- #16 训练语料:train 半侧提取 + 训练用途许可核查 + schema 定稿(零花费,
+  当前 frontier)
+- #17 合成训练语料:场景族/种子分流 + 加重配比(零花费)
+- #18 teacher 蒸馏管线 walking skeleton:小规模 pilot(几百条,~10² 次
+  网关调用)
+- #19 训练 plumbing:pilot 微调打通 + drop-in 契约(不做质量声称)
+- #20 大规模蒸馏 + 训练集冻结 + 阶段 2 出口核销(定容决策后全量花费,
+  阶段 3 开工门)
+
+花费纪律:零花费票先行,pilot 验证管线后才放全量(#20 同时被 #18/#19
+阻塞)。
