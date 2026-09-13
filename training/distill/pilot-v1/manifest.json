@@ -3,18 +3,18 @@
   "method": "LLMLingua-2 distillation pipeline (arXiv:2403.12968): teacher compression of <=512-token chunks -> deterministic word-level labels via sliding-window fuzzy matching -> VR/AG quality control",
   "generated_by": {
     "tool": "trillic.distill",
-    "repo_commit": "36f2013ecf76a2778ede6baacb58ca5860e080a4",
-    "repo_dirty": true
+    "repo_commit": "0f52e4edffec733f1f3df157ec72d611929fde68",
+    "repo_dirty": false
   },
   "corpus": {
     "files": [
       {
-        "file": "/Users/nicholasl/Documents/build-whatever/trillic/training/corpus/longbench-train-v1.jsonl",
+        "file": "training/corpus/longbench-train-v1.jsonl",
         "sha256": "40e58c6680be10bea9a9f5553b0fd3502089033789ccc3c3556e2e5d4693ca17",
         "entries": 300
       },
       {
-        "file": "/Users/nicholasl/Documents/build-whatever/trillic/training/corpus/synthetic-train-v1.jsonl",
+        "file": "training/corpus/synthetic-train-v1.jsonl",
         "sha256": "c6e48411309bb6ff5211bef39220db8498f0d28aefc9ddc2a2529ba1511c4eca",
         "entries": 700
       }
@@ -57,10 +57,11 @@
     }
   },
   "gateway": {
-    "calls_fresh": 296,
-    "calls_reused": 3,
+    "calls_fresh": 0,
+    "calls_reused": 299,
     "ledger_id": "4fa4734ddd57fcec",
-    "journal": "/Users/nicholasl/Documents/build-whatever/trillic/runs/.ledger/distill-4fa4734ddd57fcec.jsonl"
+    "journal": "runs/.ledger/ (content-addressed, gitignored runtime ledger)",
+    "journal_records": 299
   },
   "outputs": {
     "labeled": {

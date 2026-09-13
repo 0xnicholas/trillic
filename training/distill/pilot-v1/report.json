@@ -34,10 +34,11 @@
     }
   },
   "gateway": {
-    "calls_fresh": 296,
-    "calls_reused": 3,
+    "calls_fresh": 0,
+    "calls_reused": 299,
     "ledger_id": "4fa4734ddd57fcec",
-    "journal": "/Users/nicholasl/Documents/build-whatever/trillic/runs/.ledger/distill-4fa4734ddd57fcec.jsonl"
+    "journal": "runs/.ledger/ (content-addressed, gitignored runtime ledger)",
+    "journal_records": 299
   },
   "quality_control": {
     "order": "variation_rate_then_alignment_gap",
@@ -585,25 +586,25 @@
       "word_compressed_rate": {
         "p50": 0.7046,
         "p90": 0.9228,
-        "p95": 0.9731299999999996,
+        "p95": 0.9731,
         "mean": 0.7319
       },
       "variation_rate": {
         "p50": 0.0,
         "p90": 0.0074,
-        "p95": 0.010609999999999996,
+        "p95": 0.0106,
         "mean": 0.0017
       },
       "matching_rate": {
         "p50": 0.7044,
-        "p90": 0.91904,
-        "p95": 0.9731299999999996,
+        "p90": 0.919,
+        "p95": 0.9731,
         "mean": 0.729
       },
       "hitting_rate": {
         "p50": 0.7044,
-        "p90": 0.91904,
-        "p95": 0.9731299999999996,
+        "p90": 0.919,
+        "p95": 0.9731,
         "mean": 0.7307
       },
       "alignment_gap": {
@@ -616,20 +617,20 @@
     "kept": {
       "word_compressed_rate": {
         "p50": 0.7046,
-        "p90": 0.91678,
-        "p95": 0.9462399999999997,
+        "p90": 0.9168,
+        "p95": 0.9462,
         "mean": 0.7299
       },
       "variation_rate": {
         "p50": 0.0,
-        "p90": 0.0034599999999999995,
-        "p95": 0.007089999999999995,
+        "p90": 0.0035,
+        "p95": 0.0071,
         "mean": 0.0007
       },
       "matching_rate": {
         "p50": 0.7046,
-        "p90": 0.91678,
-        "p95": 0.9462399999999997,
+        "p90": 0.9168,
+        "p95": 0.9462,
         "mean": 0.7291
       },
       "alignment_gap": {

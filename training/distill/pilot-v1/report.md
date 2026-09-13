@@ -15,10 +15,10 @@
 
 | metric | p50 | p90 | p95 | mean |
 |---|---|---|---|---|
-| matching_rate | 0.7044 -> 0.7046 | 0.91904 -> 0.91678 | 0.9731299999999996 -> 0.9462399999999997 | 0.729 -> 0.7291 |
+| matching_rate | 0.7044 -> 0.7046 | 0.919 -> 0.9168 | 0.9731 -> 0.9462 | 0.729 -> 0.7291 |
 | alignment_gap | 0.0 -> 0.0 | 0.0049 -> 0.0 | 0.0078 -> 0.0025 | 0.0017 -> 0.0003 |
-| variation_rate | 0.0 -> 0.0 | 0.0074 -> 0.0034599999999999995 | 0.010609999999999996 -> 0.007089999999999995 | 0.0017 -> 0.0007 |
-| word_compressed_rate | 0.7046 -> 0.7046 | 0.9228 -> 0.91678 | 0.9731299999999996 -> 0.9462399999999997 | 0.7319 -> 0.7299 |
+| variation_rate | 0.0 -> 0.0 | 0.0074 -> 0.0035 | 0.0106 -> 0.0071 | 0.0017 -> 0.0007 |
+| word_compressed_rate | 0.7046 -> 0.7046 | 0.9228 -> 0.9168 | 0.9731 -> 0.9462 | 0.7319 -> 0.7299 |
 
 ## Teacher
 
@@ -27,5 +27,5 @@
 
 ## Gateway billing
 
-- fresh calls: 296, replayed: 3
-- crash journal: `/Users/nicholasl/Documents/build-whatever/trillic/runs/.ledger/distill-4fa4734ddd57fcec.jsonl` (ledger `4fa4734ddd57fcec`)
+- fresh calls: 0, replayed: 299
+- crash journal: `runs/.ledger/ (content-addressed, gitignored runtime ledger)` (ledger `4fa4734ddd57fcec`)
