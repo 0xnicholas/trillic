@@ -3,8 +3,8 @@
   "split_method": "sha1(context + NUL + input) sorted ascending; first ceil(n/2) -> eval half, remainder -> train half",
   "generated_by": {
     "tool": "trillic.corpus",
-    "repo_commit": "362a94f27bde2a2e9af9c17cd597ca4d25735722",
-    "repo_dirty": true
+    "repo_commit": "aa5dcb1fb61f5c5bf8277b0523d98277e88dd135",
+    "repo_dirty": false
   },
   "corpus": {
     "file": "training/corpus/longbench-train-v1.jsonl",
